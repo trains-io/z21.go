@@ -1,5 +1,26 @@
 package z21
 
+const (
+	FREE_NOVOLT    uint16 = 0x0000
+	FREE           uint16 = 0x0100
+	BUSY_NOVOLT    uint16 = 0x1000
+	BUSY           uint16 = 0x1100
+	BUSY_OVERLOAD1 uint16 = 0x1201
+	BUSY_OVERLOAD2 uint16 = 0x1202
+	BUSY_OVERLOAD3 uint16 = 0x1203
+)
+
+type Detector struct {
+	NetworkID uint16
+	Address   uint16
+	Ports     []DetectorPort
+}
+
+type DetectorPort struct {
+	Index  uint8
+	Status uint16
+}
+
 type Mask8 uint8
 type Mask32 uint32
 

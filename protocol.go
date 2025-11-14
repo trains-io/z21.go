@@ -395,6 +395,8 @@ func DecodeFrame(f Frame) (Serializable, error) {
 		m = &SubscribedBroadcastFlags{}
 	case LAN_SYSTEMSTATE_DATACHANGED:
 		m = &SysData{}
+	case LAN_CAN_DETECTOR:
+		m = &CanDetector{}
 	default:
 		return nil, fmt.Errorf("unknown frame header %d", f.Header)
 	}
