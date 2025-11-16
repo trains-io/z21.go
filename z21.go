@@ -358,10 +358,7 @@ func (nc *Conn) Listen() {
 			}
 
 			nc.mu.Lock()
-			key, ok := m.Key()
-			if !ok {
-				log.Error().Msg("unable to track message")
-			}
+			key, _ := m.Key()
 			if entry, ok := nc.requests[key]; ok {
 				entry.timer.Stop()
 				select {

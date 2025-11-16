@@ -15,15 +15,19 @@ const (
 
 // LAN_CAN_DETECTOR
 type CanDetector struct {
-	NetworkID uint16
-	Address   uint16
-	Port      uint8
-	Type      uint8
-	Value1    uint16
-	Value2    uint16
+	NetworkID uint16 `json:"network_id"`
+	Address   uint16 `json:"address"`
+	Port      uint8  `json:"port"`
+	Type      uint8  `json:"type"`
+	Value1    uint16 `json:"value1"`
+	Value2    uint16 `json:"value2"`
 }
 
 // ---------- Message interface ----------
+
+func (m *CanDetector) String() string {
+	return "can"
+}
 
 func (m *CanDetector) Pack() ([]byte, error) {
 	bytes := make([]byte, 3)
