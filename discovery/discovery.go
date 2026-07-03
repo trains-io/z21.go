@@ -19,7 +19,7 @@ const defaultConcurrency = 200
 type Device struct {
 	IP     net.IP
 	Port   int
-	Serial string
+	HWInfo protocol.HWInfo
 }
 
 // Options configures a network scan.
@@ -93,7 +93,7 @@ func incIP(ip net.IP) {
 	}
 }
 
-// Probe sends LAN_GET_SERIAL_NUMBER to a single host and reports whether it is a Z21 device.
+// Probe sends LAN_GET_HWINFO to a single host and reports whether it is a Z21 device.
 func Probe(ctx context.Context, ip net.IP, port int, observer client.Observer) (Device, error) {
 	device := Device{IP: ip, Port: port}
 
@@ -104,17 +104,17 @@ func Probe(ctx context.Context, ip net.IP, port int, observer client.Observer) (
 	}
 	defer c.Close()
 
-	msgs, err := c.Call(ctx, protocol.GetSerialNumber())
+	msgs, err := c.Call(ctx, protocol.GetHWInfo())
 	if err != nil {
 		return device, err
 	}
 
-	serial, ok := protocol.SerialFromMessages(msgs)
-	if !ok {
-		return device, fmt.Errorf("discovery: no LAN_GET_SERIAL_NUMBER reply from %s", addr)
+	hwInfo, err := protocol.HWInfoFromMessages(msgs)
+	if err != nil {
+		return device, fmt.Errorf("discovery: no LAN_GET_HWINFO reply from %s", addr)
 	}
 
-	device.Serial = serial
+	device.HWInfo = hwInfo
 	return device, nil
 }
 

@@ -10,6 +10,8 @@ import (
 	"github.com/trains-io/z21.go/protocol"
 )
 
+var testHWInfoReply = []byte{0x01, 0x02, 0x00, 0x00, 0x43, 0x01, 0x00, 0x00}
+
 func TestHostsInNetwork(t *testing.T) {
 	_, network, err := net.ParseCIDR("192.168.2.0/30")
 	if err != nil {
@@ -36,7 +38,7 @@ func TestParseTargetCIDR(t *testing.T) {
 }
 
 func TestProbe(t *testing.T) {
-	conn, _ := startSerialStub(t)
+	conn, _ := startHWInfoStub(t)
 	defer conn.Close()
 
 	host, port := udpHostPort(t, conn.LocalAddr())
@@ -48,8 +50,11 @@ func TestProbe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Probe() error = %v", err)
 	}
-	if device.Serial != "265070" {
-		t.Fatalf("serial = %q, want 265070", device.Serial)
+	if device.HWInfo.HwType != protocol.HwTypeZ21New {
+		t.Fatalf("HwType = %#x, want %#x", device.HWInfo.HwType, protocol.HwTypeZ21New)
+	}
+	if device.HWInfo.FirmwareVersion != 0x00000143 {
+		t.Fatalf("FirmwareVersion = %#x, want 0x00000143", device.HWInfo.FirmwareVersion)
 	}
 }
 
@@ -61,8 +66,8 @@ func TestScanFindsDevice(t *testing.T) {
 	defer conn.Close()
 
 	reply, err := protocol.Message{
-		Header: protocol.HeaderLANGetSerialNumber,
-		Data:   []byte{0x6E, 0x0B, 0x04, 0x00},
+		Header: protocol.HeaderLANGetHWInfo,
+		Data:   testHWInfoReply,
 	}.Marshal()
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +82,7 @@ func TestScanFindsDevice(t *testing.T) {
 				return
 			}
 			msgs, err := protocol.ParseAll(buf[:n])
-			if err != nil || len(msgs) != 1 || msgs[0].Header != protocol.HeaderLANGetSerialNumber {
+			if err != nil || len(msgs) != 1 || msgs[0].Header != protocol.HeaderLANGetHWInfo {
 				continue
 			}
 			_, _ = conn.WriteToUDP(reply, addr)
@@ -101,12 +106,12 @@ func TestScanFindsDevice(t *testing.T) {
 	if len(devices) != 1 {
 		t.Fatalf("Scan() found %d devices, want 1", len(devices))
 	}
-	if devices[0].Serial != "265070" {
-		t.Fatalf("Scan() serial = %q, want 265070", devices[0].Serial)
+	if devices[0].HWInfo.HwType != protocol.HwTypeZ21New {
+		t.Fatalf("Scan() HwType = %#x, want %#x", devices[0].HWInfo.HwType, protocol.HwTypeZ21New)
 	}
 }
 
-func startSerialStub(t *testing.T) (*net.UDPConn, []byte) {
+func startHWInfoStub(t *testing.T) (*net.UDPConn, []byte) {
 	t.Helper()
 
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
@@ -115,8 +120,8 @@ func startSerialStub(t *testing.T) (*net.UDPConn, []byte) {
 	}
 
 	reply, err := protocol.Message{
-		Header: protocol.HeaderLANGetSerialNumber,
-		Data:   []byte{0x6E, 0x0B, 0x04, 0x00},
+		Header: protocol.HeaderLANGetHWInfo,
+		Data:   testHWInfoReply,
 	}.Marshal()
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +137,7 @@ func startSerialStub(t *testing.T) (*net.UDPConn, []byte) {
 			return
 		}
 		msgs, err := protocol.ParseAll(buf[:n])
-		if err != nil || len(msgs) != 1 || msgs[0].Header != protocol.HeaderLANGetSerialNumber {
+		if err != nil || len(msgs) != 1 || msgs[0].Header != protocol.HeaderLANGetHWInfo {
 			return
 		}
 		_, _ = conn.WriteToUDP(reply, addr)
