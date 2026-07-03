@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Unit tests
+        run: go test ./... -count=1
+
+      - name: Integration tests
+        env:
+          Z21_TESTSERVER_IMAGE: ghcr.io/trains-io/z21-sim:latest
+        run: go test -tags=integration ./... -count=1 -timeout=10m
