@@ -38,7 +38,7 @@ func TestSystemStateFromMessages(t *testing.T) {
 	data := make([]byte, 16)
 	data[12] = 0x02 // track voltage off
 	msgs := []Message{{
-		Header: HeaderLANSystemStateChanged,
+		Header: HeaderLANSystemStateDataChanged,
 		Data:   data,
 	}}
 

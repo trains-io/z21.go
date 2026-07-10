@@ -53,12 +53,42 @@ func TestTracerHexdumpOnCall(t *testing.T) {
 	for _, want := range []string{
 		">> ",
 		"<< ",
-		"LAN_GET_HWINFO",
+		"LAN_GET_HWINFO (8 bytes)",
 		"00000000",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("trace missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestTracerCombinedPayload(t *testing.T) {
+	payload, err := protocol.MarshalAll(
+		protocol.SetBroadcastFlags(0x101),
+		protocol.GetXStatus(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var trace bytes.Buffer
+	tr := client.NewTracer(&trace)
+	tr.OnPacket(t.Context(), client.DirectionTX, "127.0.0.1:21107", payload, nil)
+
+	out := trace.String()
+	for _, want := range []string{
+		">> 127.0.0.1:21107 (15 bytes, 2 datasets)",
+		"[1/2] LAN_SET_BROADCASTFLAGS (8 bytes)",
+		"[2/2] LAN_X_GET_STATUS (7 bytes)",
+		"00000000",
+		"00000008",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("trace missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "LAN_SET_BROADCASTFLAGS data=") {
+		t.Fatalf("unexpected legacy combined label format:\n%s", out)
 	}
 }
 

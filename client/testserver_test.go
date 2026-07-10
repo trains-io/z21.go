@@ -168,7 +168,7 @@ func TestSystemStateGetData(t *testing.T) {
 
 	var state *protocol.Message
 	for i := range msgs {
-		if msgs[i].Header == protocol.HeaderLANSystemStateChanged {
+		if msgs[i].Header == protocol.HeaderLANSystemStateDataChanged {
 			state = &msgs[i]
 			break
 		}

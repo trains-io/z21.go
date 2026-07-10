@@ -97,6 +97,34 @@ func TestParseCombinedUDP(t *testing.T) {
 	}
 }
 
+func TestMarshalAllRoundTrip(t *testing.T) {
+	reqs := []protocol.Message{
+		protocol.GetSerialNumber(),
+		protocol.GetHWInfo(),
+		protocol.GetXVersion(),
+		protocol.GetXFirmware(),
+		protocol.GetCode(),
+	}
+
+	payload, err := protocol.MarshalAll(reqs...)
+	if err != nil {
+		t.Fatalf("MarshalAll() error = %v", err)
+	}
+
+	msgs, err := protocol.ParseAll(payload)
+	if err != nil {
+		t.Fatalf("ParseAll() error = %v", err)
+	}
+	if len(msgs) != len(reqs) {
+		t.Fatalf("ParseAll() len = %d, want %d", len(msgs), len(reqs))
+	}
+	for i, req := range reqs {
+		if msgs[i].Header != req.Header {
+			t.Fatalf("msgs[%d].Header = %04X, want %04X", i, msgs[i].Header, req.Header)
+		}
+	}
+}
+
 func TestUnmarshalTruncatedDataLen(t *testing.T) {
 	// Z21Posix replies to LAN_GET_CODE with DataLen=8 but only 5 bytes on the wire.
 	payload := []byte{0x08, 0x00, 0x18, 0x00, 0x00}

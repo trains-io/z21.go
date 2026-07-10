@@ -42,7 +42,7 @@ func SystemStateGetData() Message {
 // SystemStateFromMessages extracts system state from a Call reply.
 func SystemStateFromMessages(msgs []Message) (SystemState, error) {
 	for _, msg := range msgs {
-		if msg.Header != HeaderLANSystemStateChanged {
+		if msg.Header != HeaderLANSystemStateDataChanged {
 			continue
 		}
 		state, err := ParseSystemState(msg.Data)
@@ -72,9 +72,9 @@ func ParseSystemState(data []byte) (SystemState, error) {
 	}, nil
 }
 
-// IsSystemStateChanged reports whether msg is LAN_SYSTEMSTATE_DATACHANGED (spec §2.18).
-func IsSystemStateChanged(msg Message) bool {
-	if msg.Header != HeaderLANSystemStateChanged {
+// IsSystemStateDataChanged reports whether msg is LAN_SYSTEMSTATE_DATACHANGED (spec §2.18).
+func IsSystemStateDataChanged(msg Message) bool {
+	if msg.Header != HeaderLANSystemStateDataChanged {
 		return false
 	}
 	_, err := ParseSystemState(msg.Data)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/trains-io/z21.go/protocol"
 )
@@ -56,33 +55,73 @@ func (c *Client) SetObserver(o Observer) {
 	c.observer = o
 }
 
-func (t *Tracer) log(direction, remoteAddr string, data []byte, msgs []protocol.Message) {
-	fmt.Fprintf(t.Out, "%s %s (%d bytes)\n", direction, remoteAddr, len(data))
-	writeHexdump(t.Out, data)
-	t.writeHeaders(data, msgs)
+type wireDataset struct {
+	msg    protocol.Message
+	offset int
+	wire   []byte
 }
 
-func (t *Tracer) writeHeaders(data []byte, msgs []protocol.Message) {
-	if len(msgs) == 0 {
-		parsed, err := protocol.ParseAll(data)
-		if err != nil || len(parsed) == 0 {
-			return
-		}
-		msgs = parsed
+func (t *Tracer) log(direction, remoteAddr string, data []byte, _ []protocol.Message) {
+	datasets, err := wireDatasets(data)
+	if err != nil || len(datasets) == 0 {
+		fmt.Fprintf(t.Out, "%s %s (%d bytes)\n", direction, remoteAddr, len(data))
+		writeHexdump(t.Out, data)
+		return
 	}
-	var parts []string
-	for _, msg := range msgs {
-		name := protocol.MessageName(msg)
-		if len(msg.Data) > 0 {
-			parts = append(parts, fmt.Sprintf("%s data=%d", name, len(msg.Data)))
-		} else {
-			parts = append(parts, name)
+
+	switch len(datasets) {
+	case 1:
+		ds := datasets[0]
+		fmt.Fprintf(t.Out, "%s %s (%d bytes)\n", direction, remoteAddr, len(data))
+		fmt.Fprintf(t.Out, "   %s\n", datasetSummary(ds.msg, len(ds.wire)))
+		writeHexdump(t.Out, ds.wire)
+	default:
+		fmt.Fprintf(t.Out, "%s %s (%d bytes, %d datasets)\n", direction, remoteAddr, len(data), len(datasets))
+		for i, ds := range datasets {
+			fmt.Fprintf(t.Out, "   [%d/%d] %s\n", i+1, len(datasets), datasetSummary(ds.msg, len(ds.wire)))
+			writeIndentedHexdump(t.Out, ds.offset, ds.wire)
 		}
 	}
-	fmt.Fprintf(t.Out, "   %s\n", strings.Join(parts, ", "))
+}
+
+func wireDatasets(raw []byte) ([]wireDataset, error) {
+	var out []wireDataset
+	rest := raw
+	offset := 0
+	for len(rest) > 0 {
+		msg, tail, err := protocol.Unmarshal(rest)
+		if err != nil {
+			return nil, err
+		}
+		consumed := len(rest) - len(tail)
+		out = append(out, wireDataset{
+			msg:    msg,
+			offset: offset,
+			wire:   rest[:consumed],
+		})
+		offset += consumed
+		rest = tail
+	}
+	return out, nil
+}
+
+func datasetSummary(msg protocol.Message, wireLen int) string {
+	name := protocol.MessageName(msg)
+	if wireLen > 0 {
+		return fmt.Sprintf("%s (%d bytes)", name, wireLen)
+	}
+	return name
 }
 
 func writeHexdump(w io.Writer, data []byte) {
+	writeHexdumpAt(w, 0, data, "")
+}
+
+func writeIndentedHexdump(w io.Writer, baseOffset int, data []byte) {
+	writeHexdumpAt(w, baseOffset, data, "       ")
+}
+
+func writeHexdumpAt(w io.Writer, baseOffset int, data []byte, indent string) {
 	const width = 16
 	for offset := 0; offset < len(data); offset += width {
 		end := offset + width
@@ -91,7 +130,7 @@ func writeHexdump(w io.Writer, data []byte) {
 		}
 		chunk := data[offset:end]
 
-		fmt.Fprintf(w, "%08x  ", offset)
+		fmt.Fprintf(w, "%s%08x  ", indent, baseOffset+offset)
 		for i := 0; i < width; i++ {
 			if i < len(chunk) {
 				fmt.Fprintf(w, "%02x ", chunk[i])

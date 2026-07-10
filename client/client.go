@@ -26,6 +26,7 @@ type Client struct {
 	addr     *net.UDPAddr
 	observer Observer
 	log      *slog.Logger
+	prepend  []protocol.Message
 }
 
 // Dial connects to host or host:port (default port 21105 if omitted).
@@ -84,13 +85,29 @@ func (c *Client) LocalAddr() net.Addr {
 	return c.conn.LocalAddr()
 }
 
+// SetPrependMessages configures datasets sent before every Send/Call payload.
+func (c *Client) SetPrependMessages(msgs ...protocol.Message) {
+	if c == nil {
+		return
+	}
+	c.prepend = append([]protocol.Message(nil), msgs...)
+}
+
 // Send transmits req without waiting for a reply.
 func (c *Client) Send(ctx context.Context, req protocol.Message) error {
+	return c.SendMany(ctx, req)
+}
+
+// SendMany transmits reqs in one UDP datagram without waiting for a reply.
+func (c *Client) SendMany(ctx context.Context, reqs ...protocol.Message) error {
 	if c == nil || c.conn == nil {
 		return fmt.Errorf("z21 client: not connected")
 	}
+	if len(reqs) == 0 {
+		return fmt.Errorf("z21 client: no request")
+	}
 
-	payload, err := req.Marshal()
+	payload, err := c.marshalOutbound(reqs)
 	if err != nil {
 		return err
 	}
@@ -110,16 +127,25 @@ func (c *Client) Send(ctx context.Context, req protocol.Message) error {
 	return nil
 }
 
-// Call sends req and waits for one UDP response, which may contain multiple datasets.
-func (c *Client) Call(ctx context.Context, req protocol.Message) ([]protocol.Message, error) {
+// Call sends one or more requests in a single UDP datagram and waits for the
+// response(s). A single request expects one UDP datagram (which may contain
+// multiple datasets). Multiple requests are equivalent to separate UDP packets
+// (spec §1.3); replies are collected until each request is matched or the
+// context times out. Unsolicited broadcasts are ignored for completion.
+func (c *Client) Call(ctx context.Context, reqs ...protocol.Message) ([]protocol.Message, error) {
 	if c == nil || c.conn == nil {
 		return nil, fmt.Errorf("z21 client: not connected")
 	}
+	if len(reqs) == 0 {
+		return nil, fmt.Errorf("z21 client: no request")
+	}
 
-	payload, err := req.Marshal()
+	payload, err := c.marshalOutbound(reqs)
 	if err != nil {
 		return nil, err
 	}
+
+	expecting := protocol.RequestsExpectingReplies(reqs)
 
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := c.conn.SetDeadline(deadline); err != nil {
@@ -139,6 +165,35 @@ func (c *Client) Call(ctx context.Context, req protocol.Message) ([]protocol.Mes
 	}
 	c.observePacket(ctx, DirectionTX, payload, nil)
 
+	if len(expecting) == 0 {
+		return nil, nil
+	}
+
+	if len(expecting) == 1 && len(c.prepend) == 0 {
+		msgs, err := c.readOneDatagram(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return protocol.MatchedReplies(expecting, msgs), nil
+	}
+
+	// ReadPacket manages per-read deadlines; drop the write deadline on the socket.
+	_ = c.conn.SetDeadline(time.Time{})
+	return c.collectResponsesForRequests(ctx, expecting)
+}
+
+func (c *Client) marshalOutbound(reqs []protocol.Message) ([]byte, error) {
+	outbound := make([]protocol.Message, 0, len(c.prepend)+len(reqs))
+	outbound = append(outbound, c.prepend...)
+	outbound = append(outbound, reqs...)
+
+	if len(outbound) == 1 {
+		return outbound[0].Marshal()
+	}
+	return protocol.MarshalAll(outbound...)
+}
+
+func (c *Client) readOneDatagram(ctx context.Context) ([]protocol.Message, error) {
 	buf := make([]byte, 1472)
 	n, err := c.conn.Read(buf)
 	if err != nil {
@@ -154,6 +209,39 @@ func (c *Client) Call(ctx context.Context, req protocol.Message) ([]protocol.Mes
 	}
 	c.observePacket(ctx, DirectionRX, raw, msgs)
 	return msgs, nil
+}
+
+func (c *Client) collectResponsesForRequests(ctx context.Context, reqs []protocol.Message) ([]protocol.Message, error) {
+	var all []protocol.Message
+	for {
+		if protocol.AllRequestsAnswered(reqs, all) {
+			return protocol.MatchedReplies(reqs, all), nil
+		}
+		if err := ctx.Err(); err != nil {
+			if len(all) > 0 {
+				return protocol.MatchedReplies(reqs, all), nil
+			}
+			return nil, err
+		}
+
+		packetCtx, cancel := context.WithTimeout(ctx, readPollInterval)
+		msgs, err := c.ReadPacket(packetCtx)
+		cancel()
+
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+			if errors.Is(err, context.Canceled) {
+				if len(all) > 0 {
+					return protocol.MatchedReplies(reqs, all), nil
+				}
+				return nil, err
+			}
+			return protocol.MatchedReplies(reqs, all), err
+		}
+		all = append(all, msgs...)
+	}
 }
 
 func (c *Client) clearDeadlines() {

@@ -15,8 +15,8 @@ const (
 	HeaderLANSetLocoMode          uint16 = 0x0061
 	HeaderLANGetTurnoutMode       uint16 = 0x0070
 	HeaderLANSetTurnoutMode       uint16 = 0x0071
-	HeaderLANSystemStateGetData   uint16 = 0x0085
-	HeaderLANSystemStateChanged   uint16 = 0x0084
+	HeaderLANSystemStateGetData       uint16 = 0x0085
+	HeaderLANSystemStateDataChanged   uint16 = 0x0084
 	HeaderLANRMBusDataChanged     uint16 = 0x0080
 	HeaderLANRMBusGetData         uint16 = 0x0081
 	HeaderLANRMBusProgramModule   uint16 = 0x0082
@@ -58,8 +58,8 @@ func HeaderName(header uint16) string {
 		return "LAN_SET_TURNOUTMODE"
 	case HeaderLANSystemStateGetData:
 		return "LAN_SYSTEMSTATE_GETDATA"
-	case HeaderLANSystemStateChanged:
-		return "LAN_SYSTEMSTATE_CHANGED"
+	case HeaderLANSystemStateDataChanged:
+		return "LAN_SYSTEMSTATE_DATACHANGED"
 	case HeaderLANRMBusDataChanged:
 		return "LAN_RMBUS_DATACHANGED"
 	case HeaderLANRMBusGetData:

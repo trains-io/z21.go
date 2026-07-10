@@ -29,6 +29,23 @@ func (m Message) Marshal() ([]byte, error) {
 	return out, nil
 }
 
+// MarshalAll encodes multiple datasets into one UDP payload (spec §1.3).
+func MarshalAll(msgs ...Message) ([]byte, error) {
+	if len(msgs) == 0 {
+		return nil, fmt.Errorf("z21: no datasets to marshal")
+	}
+
+	var out []byte
+	for i, msg := range msgs {
+		encoded, err := msg.Marshal()
+		if err != nil {
+			return nil, fmt.Errorf("z21: marshal dataset %d: %w", i, err)
+		}
+		out = append(out, encoded...)
+	}
+	return out, nil
+}
+
 // Unmarshal decodes one dataset from b and returns any trailing bytes.
 func Unmarshal(b []byte) (Message, []byte, error) {
 	if len(b) < 4 {

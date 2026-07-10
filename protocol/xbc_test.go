@@ -81,13 +81,13 @@ func TestIsXStatusChanged(t *testing.T) {
 	}
 }
 
-func TestIsSystemStateChanged(t *testing.T) {
-	msg := Message{Header: HeaderLANSystemStateChanged, Data: make([]byte, 16)}
-	if !IsSystemStateChanged(msg) {
-		t.Fatal("IsSystemStateChanged() = false, want true")
+func TestIsSystemStateDataChanged(t *testing.T) {
+	msg := Message{Header: HeaderLANSystemStateDataChanged, Data: make([]byte, 16)}
+	if !IsSystemStateDataChanged(msg) {
+		t.Fatal("IsSystemStateDataChanged() = false, want true")
 	}
-	if IsSystemStateChanged(Message{Header: HeaderLANGetHWInfo}) {
-		t.Fatal("IsSystemStateChanged() = true for wrong header")
+	if IsSystemStateDataChanged(Message{Header: HeaderLANGetHWInfo}) {
+		t.Fatal("IsSystemStateDataChanged() = true for wrong header")
 	}
 }
 
