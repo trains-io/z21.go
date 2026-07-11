@@ -70,7 +70,7 @@ make test-integration Z21_TESTSERVER_IMAGE=z21-testserver:local
 Manual equivalent:
 
 ```bash
-go test -tags=integration ./... -count=1 -timeout=10m
+go test -tags=integration ./client/... -count=1 -timeout=10m
 ```
 
 ### Run one integration test
