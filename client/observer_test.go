@@ -15,7 +15,7 @@ import (
 )
 
 type recordingObserver struct {
-	mu    sync.Mutex
+	mu     sync.Mutex
 	events []recordedEvent
 }
 

@@ -7,17 +7,17 @@ import (
 
 // Z21 LAN broadcast flag bits (spec §2.16).
 const (
-	BroadcastFlagXpressNet       uint32 = 0x00000001
-	BroadcastFlagRBus            uint32 = 0x00000002
-	BroadcastFlagRailComLegacy   uint32 = 0x00000004
-	BroadcastFlagFastClock       uint32 = 0x00000010
-	BroadcastFlagSystemState     uint32 = 0x00000100
-	BroadcastFlagAllLocoInfo     uint32 = 0x00010000
-	BroadcastFlagCANBooster      uint32 = 0x00020000
-	BroadcastFlagRailCom         uint32 = 0x00040000
-	BroadcastFlagCANDetector     uint32 = 0x00080000
+	BroadcastFlagXpressNet      uint32 = 0x00000001
+	BroadcastFlagRBus           uint32 = 0x00000002
+	BroadcastFlagRailComLegacy  uint32 = 0x00000004
+	BroadcastFlagFastClock      uint32 = 0x00000010
+	BroadcastFlagSystemState    uint32 = 0x00000100
+	BroadcastFlagAllLocoInfo    uint32 = 0x00010000
+	BroadcastFlagCANBooster     uint32 = 0x00020000
+	BroadcastFlagRailCom        uint32 = 0x00040000
+	BroadcastFlagCANDetector    uint32 = 0x00080000
 	BroadcastFlagLocoNetGeneral uint32 = 0x01000000
-	BroadcastFlagLocoNetLoco     uint32 = 0x02000000
+	BroadcastFlagLocoNetLoco    uint32 = 0x02000000
 	BroadcastFlagLocoNetTurnout uint32 = 0x04000000
 	BroadcastFlagLocoNetOcc     uint32 = 0x08000000
 )

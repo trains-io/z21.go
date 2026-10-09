@@ -6,9 +6,9 @@ import (
 )
 
 const (
-	xCommandGetFirmware      byte = 0xF1
-	xFirmwareDB0             byte = 0x0A
-	xHeaderFirmwareReply     byte = 0xF3
+	xCommandGetFirmware  byte = 0xF1
+	xFirmwareDB0         byte = 0x0A
+	xHeaderFirmwareReply byte = 0xF3
 )
 
 // XFirmware is parsed from a LAN_X_GET_FIRMWARE_VERSION reply (spec §2.15).

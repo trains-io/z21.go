@@ -7,18 +7,18 @@ import (
 )
 
 const (
-	centralStateExHighTemperature       byte = 0x01
-	centralStateExPowerLost             byte = 0x02
-	centralStateExShortCircuitExternal  byte = 0x04
-	centralStateExShortCircuitInternal  byte = 0x08
-	centralStateExRCN213                byte = 0x20
-	capabilityDCC                       byte = 0x01
-	capabilityMM                        byte = 0x02
-	capabilityRailCom                   byte = 0x08
-	capabilityLocoCmds                  byte = 0x10
-	capabilityAccessoryCmds             byte = 0x20
-	capabilityDetectorCmds              byte = 0x40
-	capabilityNeedsUnlockCode           byte = 0x80
+	centralStateExHighTemperature      byte = 0x01
+	centralStateExPowerLost            byte = 0x02
+	centralStateExShortCircuitExternal byte = 0x04
+	centralStateExShortCircuitInternal byte = 0x08
+	centralStateExRCN213               byte = 0x20
+	capabilityDCC                      byte = 0x01
+	capabilityMM                       byte = 0x02
+	capabilityRailCom                  byte = 0x08
+	capabilityLocoCmds                 byte = 0x10
+	capabilityAccessoryCmds            byte = 0x20
+	capabilityDetectorCmds             byte = 0x40
+	capabilityNeedsUnlockCode          byte = 0x80
 )
 
 // SystemState is parsed from a LAN_SYSTEMSTATE_DATACHANGED reply (spec §2.18).

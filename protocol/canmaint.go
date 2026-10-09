@@ -12,7 +12,7 @@ const (
 
 	canDetectorDevTypeHi = 0x18
 
-	canDetectorDevTypeLoBase     = 0x21
+	canDetectorDevTypeLoBase       = 0x21
 	canDetectorDevTypeLoRailComCh2 = 0x29
 
 	canMaintCmdSetModuleAddress byte = 0x14

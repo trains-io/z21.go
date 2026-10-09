@@ -10,10 +10,10 @@ func TestParseSystemState(t *testing.T) {
 		0x2A, 0x00, // temperature 42 °C
 		0x10, 0x27, // supply 10000 mV
 		0xE8, 0x03, // VCC 1000 mV
-		0x00,       // central state
-		0x00,       // central state ex
-		0x00,       // reserved
-		0x31,       // capabilities: DCC + loco + accessory
+		0x00, // central state
+		0x00, // central state ex
+		0x00, // reserved
+		0x31, // capabilities: DCC + loco + accessory
 	}
 
 	state, err := ParseSystemState(data)

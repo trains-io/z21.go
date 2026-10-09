@@ -3,16 +3,16 @@ package protocol
 import "fmt"
 
 const (
-	xHeaderCVRead        byte = 0x23
-	xCommandCVRead       byte = 0x11
-	xHeaderCVWrite       byte = 0x24
-	xCommandCVWrite      byte = 0x12
-	xHeaderCVResult      byte = 0x64
-	xCommandCVResult     byte = 0x14
-	xHeaderDCCReadReg    byte = 0x22
-	xCommandDCCReadReg   byte = 0x11
-	xCommandDCCWriteReg  byte = 0x12
-	xCommandMMWriteByte  byte = 0xFF
+	xHeaderCVRead       byte = 0x23
+	xCommandCVRead      byte = 0x11
+	xHeaderCVWrite      byte = 0x24
+	xCommandCVWrite     byte = 0x12
+	xHeaderCVResult     byte = 0x64
+	xCommandCVResult    byte = 0x14
+	xHeaderDCCReadReg   byte = 0x22
+	xCommandDCCReadReg  byte = 0x11
+	xCommandDCCWriteReg byte = 0x12
+	xCommandMMWriteByte byte = 0xFF
 )
 
 // CVAddress is a 0-based CV index (0=CV1, 255=CV256) per spec §6.

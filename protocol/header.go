@@ -5,25 +5,25 @@ import "fmt"
 // Well-known Z21 LAN dataset headers (16-bit little-endian).
 // See Roco Z21 LAN Protocol Specification.
 const (
-	HeaderLANGetSerialNumber    uint16 = 0x0010
-	HeaderLANGetCode              uint16 = 0x0018
-	HeaderLANGetHWInfo            uint16 = 0x001A
-	HeaderLANLogoff               uint16 = 0x0030
-	HeaderLANSetBroadcastFlags    uint16 = 0x0050
-	HeaderLANGetBroadcastFlags    uint16 = 0x0051
-	HeaderLANGetLocoMode          uint16 = 0x0060
-	HeaderLANSetLocoMode          uint16 = 0x0061
-	HeaderLANGetTurnoutMode       uint16 = 0x0070
-	HeaderLANSetTurnoutMode       uint16 = 0x0071
-	HeaderLANSystemStateGetData       uint16 = 0x0085
-	HeaderLANSystemStateDataChanged   uint16 = 0x0084
-	HeaderLANRMBusDataChanged     uint16 = 0x0080
-	HeaderLANRMBusGetData         uint16 = 0x0081
-	HeaderLANRMBusProgramModule   uint16 = 0x0082
-	HeaderLANRailComDataChanged   uint16 = 0x0088
-	HeaderLANRailComGetData       uint16 = 0x0089
-	HeaderLANCANDetector          uint16 = 0x00C4
-	HeaderLANCANMaintenance       uint16 = 0x00C2
+	HeaderLANGetSerialNumber         uint16 = 0x0010
+	HeaderLANGetCode                 uint16 = 0x0018
+	HeaderLANGetHWInfo               uint16 = 0x001A
+	HeaderLANLogoff                  uint16 = 0x0030
+	HeaderLANSetBroadcastFlags       uint16 = 0x0050
+	HeaderLANGetBroadcastFlags       uint16 = 0x0051
+	HeaderLANGetLocoMode             uint16 = 0x0060
+	HeaderLANSetLocoMode             uint16 = 0x0061
+	HeaderLANGetTurnoutMode          uint16 = 0x0070
+	HeaderLANSetTurnoutMode          uint16 = 0x0071
+	HeaderLANSystemStateGetData      uint16 = 0x0085
+	HeaderLANSystemStateDataChanged  uint16 = 0x0084
+	HeaderLANRMBusDataChanged        uint16 = 0x0080
+	HeaderLANRMBusGetData            uint16 = 0x0081
+	HeaderLANRMBusProgramModule      uint16 = 0x0082
+	HeaderLANRailComDataChanged      uint16 = 0x0088
+	HeaderLANRailComGetData          uint16 = 0x0089
+	HeaderLANCANDetector             uint16 = 0x00C4
+	HeaderLANCANMaintenance          uint16 = 0x00C2
 	HeaderLANCANDeviceGetDescription uint16 = 0x00C8
 	HeaderLANCANDeviceSetDescription uint16 = 0x00C9
 	HeaderLANCANBoosterSystemState   uint16 = 0x00CA

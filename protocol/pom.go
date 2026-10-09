@@ -1,8 +1,8 @@
 package protocol
 
 const (
-	xHeaderPOMLoco      byte = 0xE6
-	xCommandPOMLoco     byte = 0x30
+	xHeaderPOMLoco       byte = 0xE6
+	xCommandPOMLoco      byte = 0x30
 	xCommandPOMAccessory byte = 0x31
 
 	pomOptionWriteByte byte = 0xEC

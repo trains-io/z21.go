@@ -19,8 +19,8 @@ const (
 	// CANDetectorTypeLocoAddressMax is the last RailCom loco-address pair type (spec §10.1).
 	CANDetectorTypeLocoAddressMax byte = 0x1F
 
-	cANDetectorLocoAddressMask     uint16 = 0x3FFF
-	cANDetectorLocoDirectionMask   uint16 = 0xC000
+	cANDetectorLocoAddressMask       uint16 = 0x3FFF
+	cANDetectorLocoDirectionMask     uint16 = 0xC000
 	cANDetectorLocoDirectionForward  uint16 = 0x4000
 	cANDetectorLocoDirectionBackward uint16 = 0x8000
 )

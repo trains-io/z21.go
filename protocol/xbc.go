@@ -3,14 +3,14 @@ package protocol
 import "fmt"
 
 const (
-	xHeaderXBusBC        byte = 0x61
-	xBCDB0TrackPowerOff  byte = 0x00
-	xBCDB0TrackPowerOn   byte = 0x01
+	xHeaderXBusBC         byte = 0x61
+	xBCDB0TrackPowerOff   byte = 0x00
+	xBCDB0TrackPowerOn    byte = 0x01
 	xBCDB0ProgrammingMode byte = 0x02
-	xBCDB0ShortCircuit   byte = 0x08
-	xBCDB0CVNackSC       byte = 0x12
-	xBCDB0CVNack         byte = 0x13
-	xBCDB0UnknownCommand byte = 0x82
+	xBCDB0ShortCircuit    byte = 0x08
+	xBCDB0CVNackSC        byte = 0x12
+	xBCDB0CVNack          byte = 0x13
+	xBCDB0UnknownCommand  byte = 0x82
 )
 
 func parseXBusBC(data []byte, db0 byte) error {

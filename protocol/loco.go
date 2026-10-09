@@ -3,15 +3,15 @@ package protocol
 import "fmt"
 
 const (
-	xHeaderGetLocoInfo       byte = 0xE3
-	xCommandGetLocoInfo      byte = 0xF0
-	xCommandPurgeLoco        byte = 0x44
-	xHeaderSetLocoDrive      byte = 0xE4
-	xCommandSetLocoFunction  byte = 0xF8
-	xHeaderSetLocoBinary     byte = 0xE5
-	xCommandSetLocoBinary    byte = 0x5F
-	xHeaderLocoInfo          byte = 0xEF
-	xHeaderSetLocoEStop      byte = 0x92
+	xHeaderGetLocoInfo      byte = 0xE3
+	xCommandGetLocoInfo     byte = 0xF0
+	xCommandPurgeLoco       byte = 0x44
+	xHeaderSetLocoDrive     byte = 0xE4
+	xCommandSetLocoFunction byte = 0xF8
+	xHeaderSetLocoBinary    byte = 0xE5
+	xCommandSetLocoBinary   byte = 0x5F
+	xHeaderLocoInfo         byte = 0xEF
+	xHeaderSetLocoEStop     byte = 0x92
 
 	// LocoSpeedSteps values for the S nibble in 0x1S (spec §4.2).
 	LocoSpeedSteps14  byte = 0x00
@@ -32,9 +32,9 @@ const (
 type LocoFunctionGroup byte
 
 const (
-	LocoFunctionGroupF0F4  LocoFunctionGroup = 0x20
-	LocoFunctionGroupF5F8  LocoFunctionGroup = 0x21
-	LocoFunctionGroupF9F12 LocoFunctionGroup = 0x22
+	LocoFunctionGroupF0F4   LocoFunctionGroup = 0x20
+	LocoFunctionGroupF5F8   LocoFunctionGroup = 0x21
+	LocoFunctionGroupF9F12  LocoFunctionGroup = 0x22
 	LocoFunctionGroupF13F20 LocoFunctionGroup = 0x23
 	LocoFunctionGroupF21F28 LocoFunctionGroup = 0x28
 	LocoFunctionGroupF29F36 LocoFunctionGroup = 0x29
@@ -187,12 +187,12 @@ func ParseLocoInfo(data []byte) (LocoInfo, error) {
 	}
 
 	info := LocoInfo{
-		Address: parseLocoAddressBytes(data[1], data[2]),
-		Busy:    data[3]&0x08 != 0,
-		MMFormat: data[3]&0x10 != 0,
-		SpeedSteps: (data[3] >> 0) & 0x07,
-		Forward: data[4]&0x80 != 0,
-		Speed:   data[4] & 0x7F,
+		Address:        parseLocoAddressBytes(data[1], data[2]),
+		Busy:           data[3]&0x08 != 0,
+		MMFormat:       data[3]&0x10 != 0,
+		SpeedSteps:     (data[3] >> 0) & 0x07,
+		Forward:        data[4]&0x80 != 0,
+		Speed:          data[4] & 0x7F,
 		DoubleTraction: data[5]&0x08 != 0,
 		SmartSearch:    data[5]&0x04 != 0,
 		Headlight:      data[5]&0x02 != 0,

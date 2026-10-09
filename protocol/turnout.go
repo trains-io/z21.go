@@ -3,10 +3,10 @@ package protocol
 import "fmt"
 
 const (
-	xHeaderGetTurnoutInfo    byte = 0x43
-	xHeaderSetTurnout        byte = 0x53
-	xHeaderGetExtAccessory   byte = 0x44
-	xHeaderSetExtAccessory   byte = 0x54
+	xHeaderGetTurnoutInfo  byte = 0x43
+	xHeaderSetTurnout      byte = 0x53
+	xHeaderGetExtAccessory byte = 0x44
+	xHeaderSetExtAccessory byte = 0x54
 
 	ExtAccessoryStatusValid   byte = 0x00
 	ExtAccessoryStatusUnknown byte = 0xFF
