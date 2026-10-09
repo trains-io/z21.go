@@ -159,6 +159,47 @@ func PurgeLoco(address uint16) Message {
 	}
 }
 
+// EncodeLocoInfo builds LAN_X_LOCO_INFO with DB0–DB8 (F0–F31), the layout
+// sent by firmware 1.42+ and the ZIMO reference server (spec §4.4).
+// SpeedSteps is the raw KKK field (0 = 14, 2 = 28, 4 = 128 steps), not the
+// LocoSpeedSteps* values used by SetLocoDrive. Fields wider than their wire
+// bits are masked.
+func EncodeLocoInfo(info LocoInfo) Message {
+	msb, lsb := encodeLocoAddressBytes(info.Address)
+
+	db2 := info.SpeedSteps & 0x07
+	if info.Busy {
+		db2 |= 0x08
+	}
+	if info.MMFormat {
+		db2 |= 0x10
+	}
+
+	db3 := info.Speed & 0x7F
+	if info.Forward {
+		db3 |= 0x80
+	}
+
+	db4 := info.FunctionsF1F4 & 0x0F
+	if info.Headlight {
+		db4 |= 0x10
+	}
+	if info.SmartSearch {
+		db4 |= 0x20
+	}
+	if info.DoubleTraction {
+		db4 |= 0x40
+	}
+
+	return EncodeLANX(xHeaderLocoInfo,
+		msb, lsb, db2, db3, db4,
+		info.FunctionsF5F12,
+		info.FunctionsF13F20,
+		info.FunctionsF21F28,
+		info.FunctionsF29F31&0x07,
+	)
+}
+
 // LocoInfoFromMessages extracts LAN_X_LOCO_INFO from a Call reply or broadcast.
 func LocoInfoFromMessages(msgs []Message) (LocoInfo, error) {
 	for _, msg := range msgs {

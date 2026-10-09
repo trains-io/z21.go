@@ -108,3 +108,83 @@ func TestEncodeLocoAddressBytes(t *testing.T) {
 	require.Equal(t, byte(0x80), lsb)
 	require.Equal(t, uint16(128), parseLocoAddressBytes(msb, lsb))
 }
+
+func TestEncodeLocoInfoWire(t *testing.T) {
+	msg := EncodeLocoInfo(LocoInfo{
+		Address:        3,
+		Busy:           true,
+		SpeedSteps:     4,
+		Forward:        true,
+		Speed:          5,
+		Headlight:      true,
+		FunctionsF1F4:  0x01,
+		FunctionsF5F12: 0x01,
+	})
+	got, err := msg.Marshal()
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		0x0F, 0x00, 0x40, 0x00, // DataLen 15, LAN_X
+		0xEF,       // X-header LAN_X_LOCO_INFO
+		0x00, 0x03, // address 3
+		0x0C,             // busy, 128 steps
+		0x85,             // forward, speed 5
+		0x11,             // F0, F1
+		0x01,             // F5
+		0x00, 0x00, 0x00, // F13-F20, F21-F28, F29-F31
+		0x75, // XOR
+	}, got)
+}
+
+func TestEncodeLocoInfoLongAddress(t *testing.T) {
+	msg := EncodeLocoInfo(LocoInfo{Address: 1234})
+	require.Equal(t, []byte{0xC4, 0xD2}, msg.Data[1:3])
+}
+
+func TestEncodeLocoInfoRoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		in   LocoInfo
+	}{
+		{name: "zero", in: LocoInfo{}},
+		{name: "short address, 14 steps, reverse", in: LocoInfo{Address: 127, SpeedSteps: 0, Speed: 0x0F}},
+		{name: "long address, 28 steps", in: LocoInfo{Address: 128, SpeedSteps: 2, Forward: true, Speed: 0x1F}},
+		{name: "max address, MM, busy", in: LocoInfo{Address: 10239, MMFormat: true, Busy: true, SpeedSteps: 4, Speed: 0x7F}},
+		{name: "DB4 flags only", in: LocoInfo{Address: 3, DoubleTraction: true, SmartSearch: true, Headlight: true}},
+		{
+			name: "all functions",
+			in: LocoInfo{
+				Address:         3,
+				SpeedSteps:      4,
+				Headlight:       true,
+				FunctionsF1F4:   0x0F,
+				FunctionsF5F12:  0xFF,
+				FunctionsF13F20: 0xFF,
+				FunctionsF21F28: 0xFF,
+				FunctionsF29F31: 0x07,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := LocoInfoFromMessages([]Message{EncodeLocoInfo(tt.in)})
+			require.NoError(t, err)
+			require.Equal(t, tt.in, got)
+		})
+	}
+}
+
+func TestEncodeLocoInfoMasksFields(t *testing.T) {
+	got, err := ParseLocoInfo(EncodeLocoInfo(LocoInfo{
+		SpeedSteps:      0xFF,
+		Speed:           0xFF,
+		FunctionsF1F4:   0xFF,
+		FunctionsF29F31: 0xFF,
+	}).Data)
+	require.NoError(t, err)
+	require.Equal(t, byte(0x07), got.SpeedSteps)
+	require.False(t, got.Forward, "speed overflow must not set the direction bit")
+	require.Equal(t, byte(0x7F), got.Speed)
+	require.Equal(t, byte(0x0F), got.FunctionsF1F4)
+	require.False(t, got.Headlight, "F1-F4 overflow must not set F0")
+	require.Equal(t, byte(0x07), got.FunctionsF29F31)
+}
