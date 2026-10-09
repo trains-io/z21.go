@@ -31,6 +31,23 @@ func ParseLANX(msg Message) (xHeader byte, data []byte, err error) {
 	return msg.Data[0], data, nil
 }
 
+// parseLANXData validates LAN_X data (X-header, at least minData data bytes,
+// XOR checksum) and returns the data bytes between X-header and checksum.
+// The result aliases data.
+func parseLANXData(data []byte, xHeader byte, minData int, name string) ([]byte, error) {
+	if len(data) < minData+2 {
+		return nil, fmt.Errorf("z21: %s too short (%d bytes)", name, len(data))
+	}
+	if data[0] != xHeader {
+		return nil, fmt.Errorf("z21: not a %s (X-header %#02x)", name, data[0])
+	}
+	last := len(data) - 1
+	if data[last] != lanXXOR(data[:last]) {
+		return nil, fmt.Errorf("z21: invalid %s checksum", name)
+	}
+	return data[1:last], nil
+}
+
 func lanXXOR(data []byte) byte {
 	var x byte
 	for _, b := range data {

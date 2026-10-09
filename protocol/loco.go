@@ -159,6 +159,112 @@ func PurgeLoco(address uint16) Message {
 	}
 }
 
+// LocoDrive is decoded from LAN_X_SET_LOCO_DRIVE (spec §4.2).
+// SpeedSteps is one of the LocoSpeedSteps* values.
+type LocoDrive struct {
+	Address    uint16
+	SpeedSteps byte
+	Forward    bool
+	Speed      byte
+}
+
+// ParseGetLocoInfo decodes the address from LAN_X_GET_LOCO_INFO (spec §4.1).
+func ParseGetLocoInfo(data []byte) (address uint16, err error) {
+	d, err := parseLANXData(data, xHeaderGetLocoInfo, 3, "LAN_X_GET_LOCO_INFO")
+	if err != nil {
+		return 0, err
+	}
+	if d[0] != xCommandGetLocoInfo {
+		return 0, fmt.Errorf("z21: not a LAN_X_GET_LOCO_INFO (DB0 %#02x)", d[0])
+	}
+	return parseLocoAddressBytes(d[1], d[2]), nil
+}
+
+// ParseSetLocoDrive decodes LAN_X_SET_LOCO_DRIVE (spec §4.2).
+func ParseSetLocoDrive(data []byte) (LocoDrive, error) {
+	d, err := parseLANXData(data, xHeaderSetLocoDrive, 4, "LAN_X_SET_LOCO_DRIVE")
+	if err != nil {
+		return LocoDrive{}, err
+	}
+	steps := d[0] & 0x0F
+	if d[0]&0xF0 != 0x10 || (steps != LocoSpeedSteps14 && steps != LocoSpeedSteps28 && steps != LocoSpeedSteps128) {
+		return LocoDrive{}, fmt.Errorf("z21: not a LAN_X_SET_LOCO_DRIVE (DB0 %#02x)", d[0])
+	}
+	return LocoDrive{
+		Address:    parseLocoAddressBytes(d[1], d[2]),
+		SpeedSteps: steps,
+		Forward:    d[3]&0x80 != 0,
+		Speed:      d[3] & 0x7F,
+	}, nil
+}
+
+// ParseSetLocoFunction decodes LAN_X_SET_LOCO_FUNCTION (spec §4.3.1).
+func ParseSetLocoFunction(data []byte) (address uint16, function uint8, action LocoFunctionAction, err error) {
+	d, err := parseLANXData(data, xHeaderSetLocoDrive, 4, "LAN_X_SET_LOCO_FUNCTION")
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if d[0] != xCommandSetLocoFunction {
+		return 0, 0, 0, fmt.Errorf("z21: not a LAN_X_SET_LOCO_FUNCTION (DB0 %#02x)", d[0])
+	}
+	action = LocoFunctionAction(d[3] >> 6)
+	if action > LocoFunctionToggle {
+		return 0, 0, 0, fmt.Errorf("z21: invalid LAN_X_SET_LOCO_FUNCTION action %d", action)
+	}
+	return parseLocoAddressBytes(d[1], d[2]), d[3] & 0x3F, action, nil
+}
+
+// ParseSetLocoFunctionGroup decodes LAN_X_SET_LOCO_FUNCTION_GROUP (spec §4.3.2).
+func ParseSetLocoFunctionGroup(data []byte) (address uint16, group LocoFunctionGroup, functions byte, err error) {
+	d, err := parseLANXData(data, xHeaderSetLocoDrive, 4, "LAN_X_SET_LOCO_FUNCTION_GROUP")
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	group = LocoFunctionGroup(d[0])
+	switch group {
+	case LocoFunctionGroupF0F4, LocoFunctionGroupF5F8, LocoFunctionGroupF9F12, LocoFunctionGroupF13F20,
+		LocoFunctionGroupF21F28, LocoFunctionGroupF29F36, LocoFunctionGroupF37F44, LocoFunctionGroupF45F52,
+		LocoFunctionGroupF53F60, LocoFunctionGroupF61F68:
+	default:
+		return 0, 0, 0, fmt.Errorf("z21: not a LAN_X_SET_LOCO_FUNCTION_GROUP (DB0 %#02x)", d[0])
+	}
+	return parseLocoAddressBytes(d[1], d[2]), group, d[3], nil
+}
+
+// ParseSetLocoBinaryState decodes LAN_X_SET_LOCO_BINARY_STATE (spec §4.3.3).
+func ParseSetLocoBinaryState(data []byte) (address, binaryAddress uint16, on bool, err error) {
+	d, err := parseLANXData(data, xHeaderSetLocoBinary, 5, "LAN_X_SET_LOCO_BINARY_STATE")
+	if err != nil {
+		return 0, 0, false, err
+	}
+	if d[0] != xCommandSetLocoBinary {
+		return 0, 0, false, fmt.Errorf("z21: not a LAN_X_SET_LOCO_BINARY_STATE (DB0 %#02x)", d[0])
+	}
+	binaryAddress = uint16(d[4])<<7 | uint16(d[3]&0x7F)
+	return parseLocoAddressBytes(d[1], d[2]), binaryAddress, d[3]&0x80 != 0, nil
+}
+
+// ParseSetLocoEStop decodes the address from LAN_X_SET_LOCO_E_STOP (spec §4.5).
+func ParseSetLocoEStop(data []byte) (address uint16, err error) {
+	d, err := parseLANXData(data, xHeaderSetLocoEStop, 2, "LAN_X_SET_LOCO_E_STOP")
+	if err != nil {
+		return 0, err
+	}
+	return parseLocoAddressBytes(d[0], d[1]), nil
+}
+
+// ParsePurgeLoco decodes the address from LAN_X_PURGE_LOCO (spec §4.6).
+func ParsePurgeLoco(data []byte) (address uint16, err error) {
+	d, err := parseLANXData(data, xHeaderGetLocoInfo, 3, "LAN_X_PURGE_LOCO")
+	if err != nil {
+		return 0, err
+	}
+	if d[0] != xCommandPurgeLoco {
+		return 0, fmt.Errorf("z21: not a LAN_X_PURGE_LOCO (DB0 %#02x)", d[0])
+	}
+	return parseLocoAddressBytes(d[1], d[2]), nil
+}
+
 // EncodeLocoInfo builds LAN_X_LOCO_INFO with DB0–DB8 (F0–F31), the layout
 // sent by firmware 1.42+ and the ZIMO reference server (spec §4.4).
 // SpeedSteps is the raw KKK field (0 = 14, 2 = 28, 4 = 128 steps), not the

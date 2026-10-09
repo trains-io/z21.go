@@ -188,3 +188,126 @@ func TestEncodeLocoInfoMasksFields(t *testing.T) {
 	require.False(t, got.Headlight, "F1-F4 overflow must not set F0")
 	require.Equal(t, byte(0x07), got.FunctionsF29F31)
 }
+
+var testLocoAddresses = []uint16{0, 3, 127, 128, 1234, 10239}
+
+func TestParseGetLocoInfo(t *testing.T) {
+	for _, addr := range testLocoAddresses {
+		got, err := ParseGetLocoInfo(GetLocoInfo(addr).Data)
+		require.NoError(t, err)
+		require.Equal(t, addr, got)
+	}
+}
+
+func TestParseSetLocoDrive(t *testing.T) {
+	for _, addr := range testLocoAddresses {
+		for _, steps := range []byte{LocoSpeedSteps14, LocoSpeedSteps28, LocoSpeedSteps128} {
+			for _, in := range []LocoDrive{
+				{Address: addr, SpeedSteps: steps},
+				{Address: addr, SpeedSteps: steps, Forward: true, Speed: 0x7F},
+			} {
+				got, err := ParseSetLocoDrive(SetLocoDrive(in.Address, in.SpeedSteps, in.Forward, in.Speed).Data)
+				require.NoError(t, err)
+				require.Equal(t, in, got)
+			}
+		}
+	}
+}
+
+func TestParseSetLocoFunction(t *testing.T) {
+	for _, addr := range testLocoAddresses {
+		for _, action := range []LocoFunctionAction{LocoFunctionOff, LocoFunctionOn, LocoFunctionToggle} {
+			for _, fn := range []uint8{0, 31, 63} {
+				gotAddr, gotFn, gotAction, err := ParseSetLocoFunction(SetLocoFunction(addr, fn, action).Data)
+				require.NoError(t, err)
+				require.Equal(t, addr, gotAddr)
+				require.Equal(t, fn, gotFn)
+				require.Equal(t, action, gotAction)
+			}
+		}
+	}
+}
+
+func TestParseSetLocoFunctionGroup(t *testing.T) {
+	groups := []LocoFunctionGroup{
+		LocoFunctionGroupF0F4, LocoFunctionGroupF5F8, LocoFunctionGroupF9F12, LocoFunctionGroupF13F20,
+		LocoFunctionGroupF21F28, LocoFunctionGroupF29F36, LocoFunctionGroupF37F44, LocoFunctionGroupF45F52,
+		LocoFunctionGroupF53F60, LocoFunctionGroupF61F68,
+	}
+	for _, group := range groups {
+		addr, gotGroup, functions, err := ParseSetLocoFunctionGroup(SetLocoFunctionGroup(1234, group, 0xA5).Data)
+		require.NoError(t, err)
+		require.Equal(t, uint16(1234), addr)
+		require.Equal(t, group, gotGroup)
+		require.Equal(t, byte(0xA5), functions)
+	}
+}
+
+func TestParseSetLocoBinaryState(t *testing.T) {
+	for _, binAddr := range []uint16{0, 1, 127, 128, 32767} {
+		for _, on := range []bool{false, true} {
+			addr, gotBin, gotOn, err := ParseSetLocoBinaryState(SetLocoBinaryState(3, binAddr, on).Data)
+			require.NoError(t, err)
+			require.Equal(t, uint16(3), addr)
+			require.Equal(t, binAddr, gotBin)
+			require.Equal(t, on, gotOn)
+		}
+	}
+}
+
+func TestParseSetLocoEStopAndPurgeLoco(t *testing.T) {
+	for _, addr := range testLocoAddresses {
+		got, err := ParseSetLocoEStop(SetLocoEStop(addr).Data)
+		require.NoError(t, err)
+		require.Equal(t, addr, got)
+
+		got, err = ParsePurgeLoco(PurgeLoco(addr).Data)
+		require.NoError(t, err)
+		require.Equal(t, addr, got)
+	}
+}
+
+func TestParseLocoRequestsRejectOtherCommands(t *testing.T) {
+	drive := SetLocoDrive(3, LocoSpeedSteps128, true, 10).Data
+	function := SetLocoFunction(3, 0, LocoFunctionOn).Data
+	group := SetLocoFunctionGroup(3, LocoFunctionGroupF0F4, 0x01).Data
+	getInfo := GetLocoInfo(3).Data
+	purge := PurgeLoco(3).Data
+
+	tests := []struct {
+		name  string
+		parse func([]byte) error
+		data  []byte
+	}{
+		{name: "drive parser on function", parse: func(d []byte) error { _, err := ParseSetLocoDrive(d); return err }, data: function},
+		{name: "drive parser on group", parse: func(d []byte) error { _, err := ParseSetLocoDrive(d); return err }, data: group},
+		{name: "function parser on drive", parse: func(d []byte) error { _, _, _, err := ParseSetLocoFunction(d); return err }, data: drive},
+		{name: "group parser on function", parse: func(d []byte) error { _, _, _, err := ParseSetLocoFunctionGroup(d); return err }, data: function},
+		{name: "group parser on drive", parse: func(d []byte) error { _, _, _, err := ParseSetLocoFunctionGroup(d); return err }, data: drive},
+		{name: "get loco info parser on purge", parse: func(d []byte) error { _, err := ParseGetLocoInfo(d); return err }, data: purge},
+		{name: "purge parser on get loco info", parse: func(d []byte) error { _, err := ParsePurgeLoco(d); return err }, data: getInfo},
+		{name: "e-stop parser on get loco info", parse: func(d []byte) error { _, err := ParseSetLocoEStop(d); return err }, data: getInfo},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Error(t, tt.parse(tt.data))
+		})
+	}
+}
+
+func TestParseLocoRequestsErrors(t *testing.T) {
+	badChecksum := GetLocoInfo(3).Data
+	badChecksum[len(badChecksum)-1] ^= 0xFF
+
+	_, err := ParseGetLocoInfo(badChecksum)
+	require.ErrorContains(t, err, "checksum")
+
+	_, err = ParseGetLocoInfo([]byte{0xE3, 0xF0, 0x00})
+	require.ErrorContains(t, err, "too short")
+
+	_, _, _, err = ParseSetLocoFunction(appendLANXXOR([]byte{0xE4, 0xF8, 0x00, 0x03, 0xC0}))
+	require.ErrorContains(t, err, "action")
+
+	_, err = ParseSetLocoDrive(appendLANXXOR([]byte{0xE4, 0x11, 0x00, 0x03, 0x00}))
+	require.Error(t, err, "speed steps nibble 1 is undefined")
+}
