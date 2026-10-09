@@ -141,3 +141,138 @@ func TestCVMessageNames(t *testing.T) {
 	require.Equal(t, "LAN_X_CV_POM_READ_BYTE", MessageName(POMLocoReadByte(3, CVAddress(0))))
 	require.Equal(t, "LAN_X_CV_POM_ACCESSORY_WRITE_BYTE", MessageName(POMAccessoryWriteByte(1, CVAddress(0), 1, nil)))
 }
+
+func TestEncodeCVResultWire(t *testing.T) {
+	got, err := EncodeCVResult(CVResult{Address: CVAddressFromNumber(1), Value: 0x05}).Marshal()
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x0A, 0x00, 0x40, 0x00, 0x64, 0x14, 0x00, 0x00, 0x05, 0x75}, got)
+}
+
+func TestEncodeCVResultRoundTrip(t *testing.T) {
+	for _, in := range []CVResult{
+		{},
+		{Address: CVAddressFromNumber(29), Value: 0x06},
+		{Address: 1023, Value: 0xFF},
+	} {
+		got, err := CVResultFromMessages([]Message{EncodeCVResult(in)})
+		require.NoError(t, err)
+		require.Equal(t, in, got)
+	}
+}
+
+func TestEncodeCVNacks(t *testing.T) {
+	nack, err := EncodeCVNack().Marshal()
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x07, 0x00, 0x40, 0x00, 0x61, 0x13, 0x72}, nack)
+
+	nackSC, err := EncodeCVNackSC().Marshal()
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x07, 0x00, 0x40, 0x00, 0x61, 0x12, 0x73}, nackSC)
+
+	_, err = CVResultFromMessages([]Message{EncodeCVNack()})
+	require.ErrorContains(t, err, "NACK")
+	_, err = CVResultFromMessages([]Message{EncodeCVNackSC()})
+	require.ErrorContains(t, err, "short circuit")
+}
+
+var testCVAddresses = []CVAddress{0, CVAddressFromNumber(29), 255, 1023}
+
+func TestParseReadWriteCV(t *testing.T) {
+	for _, cv := range testCVAddresses {
+		got, err := ParseReadCV(ReadCV(cv).Data)
+		require.NoError(t, err)
+		require.Equal(t, cv, got)
+
+		for _, value := range []byte{0x00, 0x05, 0xFF} {
+			gotCV, gotValue, err := ParseWriteCV(WriteCV(cv, value).Data)
+			require.NoError(t, err)
+			require.Equal(t, cv, gotCV)
+			require.Equal(t, value, gotValue)
+		}
+	}
+}
+
+func TestParseRegisterAndMMRequests(t *testing.T) {
+	for _, reg := range []byte{1, 4, 8} {
+		got, err := ParseReadDCCRegister(ReadDCCRegister(reg).Data)
+		require.NoError(t, err)
+		require.Equal(t, reg, got)
+
+		gotReg, gotValue, err := ParseWriteDCCRegister(WriteDCCRegister(reg, 0xA5).Data)
+		require.NoError(t, err)
+		require.Equal(t, reg, gotReg)
+		require.Equal(t, byte(0xA5), gotValue)
+
+		gotReg, gotValue, err = ParseWriteMMByte(WriteMMByte(reg, 0x5A).Data)
+		require.NoError(t, err)
+		require.Equal(t, reg, gotReg)
+		require.Equal(t, byte(0x5A), gotValue)
+	}
+}
+
+func TestParseProgrammingRequestsRejectOtherCommands(t *testing.T) {
+	readCV := ReadCV(0).Data
+	writeCV := WriteCV(0, 1).Data
+	writeMM := WriteMMByte(1, 1).Data
+	writeReg := WriteDCCRegister(1, 1).Data
+
+	_, err := ParseReadCV(writeReg)
+	require.Error(t, err, "CV read and DCC write register share X-header 0x23")
+	_, _, err = ParseWriteDCCRegister(readCV)
+	require.Error(t, err)
+	_, _, err = ParseWriteCV(writeMM)
+	require.Error(t, err, "CV write and MM write byte share X-header 0x24")
+	_, _, err = ParseWriteMMByte(writeCV)
+	require.Error(t, err)
+	_, err = ParseReadDCCRegister(readCV)
+	require.Error(t, err)
+}
+
+func TestParsePOMLoco(t *testing.T) {
+	cv := CVAddressFromNumber(29)
+	for _, addr := range []uint16{3, 128, 10239} {
+		got, err := ParsePOMLoco(POMLocoWriteByte(addr, cv, 0x06).Data)
+		require.NoError(t, err)
+		require.Equal(t, POMRequest{Address: addr, CV: cv, Operation: POMWriteByte, Value: 0x06}, got)
+
+		got, err = ParsePOMLoco(POMLocoWriteBit(addr, cv, 5, true).Data)
+		require.NoError(t, err)
+		require.Equal(t, POMRequest{Address: addr, CV: cv, Operation: POMWriteBit, Bit: 5, BitValue: true}, got)
+
+		got, err = ParsePOMLoco(POMLocoReadByte(addr, 1023).Data)
+		require.NoError(t, err)
+		require.Equal(t, POMRequest{Address: addr, CV: 1023, Operation: POMReadByte}, got)
+	}
+}
+
+func TestParsePOMAccessory(t *testing.T) {
+	cv := CVAddressFromNumber(1)
+	output := uint8(5)
+	for _, addr := range []uint16{0, 42, 511} {
+		got, err := ParsePOMAccessory(POMAccessoryWriteByte(addr, cv, 0x0A, &output).Data)
+		require.NoError(t, err)
+		require.Equal(t, POMRequest{Address: addr, HasOutput: true, Output: 5, CV: cv, Operation: POMWriteByte, Value: 0x0A}, got)
+
+		got, err = ParsePOMAccessory(POMAccessoryWriteBit(addr, cv, 0, false, nil).Data)
+		require.NoError(t, err)
+		require.Equal(t, POMRequest{Address: addr, CV: cv, Operation: POMWriteBit}, got)
+
+		got, err = ParsePOMAccessory(POMAccessoryReadByte(addr, cv, nil).Data)
+		require.NoError(t, err)
+		require.Equal(t, POMRequest{Address: addr, CV: cv, Operation: POMReadByte}, got)
+	}
+}
+
+func TestParsePOMErrors(t *testing.T) {
+	_, err := ParsePOMLoco(POMAccessoryReadByte(1, 0, nil).Data)
+	require.Error(t, err, "loco parser must reject accessory POM")
+
+	_, err = ParsePOMAccessory(POMLocoReadByte(3, 0).Data)
+	require.Error(t, err, "accessory parser must reject loco POM")
+
+	_, err = ParsePOMLoco(appendLANXXOR([]byte{0xE6, 0x30, 0x00, 0x03, 0xF0, 0x00, 0x00}))
+	require.ErrorContains(t, err, "option")
+
+	_, err = ParsePOMLoco([]byte{0xE6, 0x30, 0x00, 0x03, 0xEC, 0x00, 0x05})
+	require.ErrorContains(t, err, "too short")
+}

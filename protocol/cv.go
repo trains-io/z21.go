@@ -94,6 +94,82 @@ func WriteDCCRegister(reg, value byte) Message {
 	}
 }
 
+// ParseReadCV decodes the CV address from LAN_X_CV_READ (spec §6.1).
+func ParseReadCV(data []byte) (CVAddress, error) {
+	d, err := parseLANXData(data, xHeaderCVRead, 3, "LAN_X_CV_READ")
+	if err != nil {
+		return 0, err
+	}
+	if d[0] != xCommandCVRead {
+		return 0, fmt.Errorf("z21: not a LAN_X_CV_READ (DB0 %#02x)", d[0])
+	}
+	return parseCVAddress(d[1], d[2]), nil
+}
+
+// ParseWriteCV decodes LAN_X_CV_WRITE (spec §6.2).
+func ParseWriteCV(data []byte) (cv CVAddress, value byte, err error) {
+	d, err := parseLANXData(data, xHeaderCVWrite, 4, "LAN_X_CV_WRITE")
+	if err != nil {
+		return 0, 0, err
+	}
+	if d[0] != xCommandCVWrite {
+		return 0, 0, fmt.Errorf("z21: not a LAN_X_CV_WRITE (DB0 %#02x)", d[0])
+	}
+	return parseCVAddress(d[1], d[2]), d[3], nil
+}
+
+// ParseWriteMMByte decodes LAN_X_MM_WRITE_BYTE (spec §6.12).
+func ParseWriteMMByte(data []byte) (register, value byte, err error) {
+	d, err := parseLANXData(data, xHeaderCVWrite, 4, "LAN_X_MM_WRITE_BYTE")
+	if err != nil {
+		return 0, 0, err
+	}
+	if d[0] != xCommandMMWriteByte {
+		return 0, 0, fmt.Errorf("z21: not a LAN_X_MM_WRITE_BYTE (DB0 %#02x)", d[0])
+	}
+	return d[2], d[3], nil
+}
+
+// ParseReadDCCRegister decodes the register from LAN_X_DCC_READ_REGISTER (spec §6.13).
+func ParseReadDCCRegister(data []byte) (register byte, err error) {
+	d, err := parseLANXData(data, xHeaderDCCReadReg, 2, "LAN_X_DCC_READ_REGISTER")
+	if err != nil {
+		return 0, err
+	}
+	if d[0] != xCommandDCCReadReg {
+		return 0, fmt.Errorf("z21: not a LAN_X_DCC_READ_REGISTER (DB0 %#02x)", d[0])
+	}
+	return d[1], nil
+}
+
+// ParseWriteDCCRegister decodes LAN_X_DCC_WRITE_REGISTER (spec §6.14).
+func ParseWriteDCCRegister(data []byte) (register, value byte, err error) {
+	d, err := parseLANXData(data, xHeaderCVRead, 3, "LAN_X_DCC_WRITE_REGISTER")
+	if err != nil {
+		return 0, 0, err
+	}
+	if d[0] != xCommandDCCWriteReg {
+		return 0, 0, fmt.Errorf("z21: not a LAN_X_DCC_WRITE_REGISTER (DB0 %#02x)", d[0])
+	}
+	return d[1], d[2], nil
+}
+
+// EncodeCVResult builds LAN_X_CV_RESULT (spec §6.5).
+func EncodeCVResult(r CVResult) Message {
+	msb, lsb := encodeCVAddress(r.Address)
+	return EncodeLANX(xHeaderCVResult, xCommandCVResult, msb, lsb, r.Value)
+}
+
+// EncodeCVNack builds LAN_X_CV_NACK (spec §6.4).
+func EncodeCVNack() Message {
+	return encodeXBusBC(xBCDB0CVNack)
+}
+
+// EncodeCVNackSC builds LAN_X_CV_NACK_SC (spec §6.3).
+func EncodeCVNackSC() Message {
+	return encodeXBusBC(xBCDB0CVNackSC)
+}
+
 // CVResultFromMessages extracts LAN_X_CV_RESULT from programming replies.
 func CVResultFromMessages(msgs []Message) (CVResult, error) {
 	for _, msg := range msgs {
