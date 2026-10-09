@@ -1,6 +1,9 @@
 package server
 
-import "log/slog"
+import (
+	"log/slog"
+	"time"
+)
 
 // Option configures a Server.
 type Option func(*Server)
@@ -18,6 +21,15 @@ func WithHandler(h Handler) Option {
 func WithLogger(l *slog.Logger) Option {
 	return func(s *Server) {
 		s.log = l
+	}
+}
+
+// WithSessionTimeout sets how long a client may stay silent before the server
+// forgets its session (default DefaultSessionTimeout). Zero or negative keeps
+// sessions until LAN_LOGOFF.
+func WithSessionTimeout(d time.Duration) Option {
+	return func(s *Server) {
+		s.sessionTimeout = d
 	}
 }
 

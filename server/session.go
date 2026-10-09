@@ -2,25 +2,49 @@ package server
 
 import (
 	"net/netip"
+	"time"
 
 	"github.com/trains-io/z21.go/protocol"
 )
 
+// DefaultSessionTimeout is how long a client may stay silent before the server
+// forgets it (spec §1.1: clients must communicate at least once per minute).
+const DefaultSessionTimeout = time.Minute
+
 // session is the server-side state of one client, keyed by its UDP address.
 type session struct {
 	broadcastFlags uint32
+	lastSeen       time.Time
 }
 
-// clientFor returns the client for addr, creating its session on first contact.
+// clientFor returns the client for addr, creating its session on first contact,
+// and marks it as seen now.
 func (s *Server) clientFor(addr netip.AddrPort) Client {
+	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess, ok := s.sessions[addr]
-	if !ok {
+	if !ok || s.expired(sess, now) {
+		s.pruneLocked(now)
 		sess = &session{}
 		s.sessions[addr] = sess
 	}
+	sess.lastSeen = now
 	return Client{Addr: addr, BroadcastFlags: sess.broadcastFlags}
+}
+
+func (s *Server) expired(sess *session, now time.Time) bool {
+	return s.sessionTimeout > 0 && now.Sub(sess.lastSeen) > s.sessionTimeout
+}
+
+// pruneLocked removes sessions that have been silent for longer than the
+// session timeout. s.mu must be held.
+func (s *Server) pruneLocked(now time.Time) {
+	for addr, sess := range s.sessions {
+		if s.expired(sess, now) {
+			delete(s.sessions, addr)
+		}
+	}
 }
 
 // handleSession handles the requests that only change session state and reports
@@ -50,11 +74,13 @@ func (s *Server) handleSession(w *responseWriter, c Client, msg protocol.Message
 	return true
 }
 
-// subscribers returns the addresses of clients subscribed to any bit of flag,
-// excluding except.
+// subscribers returns the addresses of active clients subscribed to any bit of
+// flag, excluding except.
 func (s *Server) subscribers(flag uint32, except netip.AddrPort) []netip.AddrPort {
+	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.pruneLocked(now)
 	var out []netip.AddrPort
 	for addr, sess := range s.sessions {
 		if addr != except && sess.broadcastFlags&flag != 0 {

@@ -30,6 +30,9 @@ type Server struct {
 	handler Handler
 	log     *slog.Logger
 
+	sessionTimeout time.Duration
+	now            func() time.Time
+
 	mu       sync.Mutex
 	sessions map[netip.AddrPort]*session
 }
@@ -46,7 +49,12 @@ func New(addr string, opts ...Option) (*Server, error) {
 		return nil, fmt.Errorf("z21: listen %q: %w", addr, err)
 	}
 
-	s := &Server{conn: conn, sessions: make(map[netip.AddrPort]*session)}
+	s := &Server{
+		conn:           conn,
+		sessionTimeout: DefaultSessionTimeout,
+		now:            time.Now,
+		sessions:       make(map[netip.AddrPort]*session),
+	}
 	applyOptions(s, opts)
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
