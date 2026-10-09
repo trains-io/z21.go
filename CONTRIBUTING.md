@@ -17,9 +17,11 @@ Integration tests need a running Docker daemon (`docker info`).
 From the repository root:
 
 ```bash
-make test              # unit tests (no Docker)
+make check             # gofmt, go vet and unit tests with -race (same as CI, no Docker)
 make test-integration  # client tests against a Z21 simulator in Docker
 ```
+
+Run `make check` before pushing; CI runs the same targets.
 
 ## Unit tests
 
@@ -32,7 +34,7 @@ make test
 Or directly:
 
 ```bash
-go test ./... -count=1
+go test -race ./... -count=1
 ```
 
 ### Single package
@@ -90,4 +92,5 @@ go test -tags=integration ./client/... -count=1 -timeout=10m
 
 ## CI
 
-GitHub Actions runs unit and integration tests on every push and pull request.
+GitHub Actions runs on every push to `main` and on pull requests: `make fmt-check`, `make vet`,
+`make test` (unit tests with `-race`) and `make test-integration` (against `ghcr.io/trains-io/z21-ref:latest`).

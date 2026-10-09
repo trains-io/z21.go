@@ -16,10 +16,14 @@ jobs:
         with:
           go-version: "1.24"
 
+      - name: Check formatting
+        run: make fmt-check
+
+      - name: Vet
+        run: make vet
+
       - name: Unit tests
-        run: go test ./... -count=1
+        run: make test
 
       - name: Integration tests
-        env:
-          Z21_TESTSERVER_IMAGE: ghcr.io/trains-io/z21-ref:latest
-        run: go test -tags=integration ./... -count=1 -timeout=10m
+        run: make test-integration

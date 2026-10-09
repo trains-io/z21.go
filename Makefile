@@ -1,4 +1,4 @@
-.PHONY: help test test-integration tidy
+.PHONY: help check fmt-check vet test test-integration
 
 .DEFAULT_GOAL := help
 
@@ -10,8 +10,20 @@ help: ## Show targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*##' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*## "}; {printf "  %-18s %s\n", $$1, $$2}'
 
-test: ## Run unit tests
-	go test ./... -count=1
+check: fmt-check vet test ## Run the same checks as CI (gofmt, go vet, unit tests with -race)
+
+fmt-check: ## Fail if any Go file needs gofmt
+	@unformatted=$$(gofmt -l .); \
+	if [ -n "$$unformatted" ]; then \
+		echo "Files need gofmt:"; echo "$$unformatted"; exit 1; \
+	fi
+
+vet: ## Run go vet, including integration-tagged files
+	go vet ./...
+	go vet -tags=integration ./...
+
+test: ## Run unit tests with the race detector
+	go test -race ./... -count=1
 
 test-integration: ## Run integration tests (requires Docker; uses ghcr.io/trains-io/z21-ref by default)
 	go test -tags=integration ./client/... -count=1 -timeout=10m
