@@ -50,3 +50,53 @@ func TestSystemStateFromMessages(t *testing.T) {
 		t.Fatalf("FormatXStatusFlags() = %q", got)
 	}
 }
+
+func TestEncodeSystemState(t *testing.T) {
+	msg := EncodeSystemState(SystemState{
+		MainCurrent:         100,
+		FilteredMainCurrent: 80,
+		Temperature:         42,
+		SupplyVoltage:       10000,
+		VCCVoltage:          1000,
+		Capabilities:        capabilityDCC | capabilityLocoCmds | capabilityAccessoryCmds,
+	})
+	if msg.Header != HeaderLANSystemStateDataChanged {
+		t.Fatalf("Header = %#x, want %#x", msg.Header, HeaderLANSystemStateDataChanged)
+	}
+	want := []byte{
+		0x64, 0x00, 0x00, 0x00, 0x50, 0x00, 0x2A, 0x00,
+		0x10, 0x27, 0xE8, 0x03, 0x00, 0x00, 0x00, 0x31,
+	}
+	if string(msg.Data) != string(want) {
+		t.Fatalf("EncodeSystemState().Data = % x, want % x", msg.Data, want)
+	}
+	if !IsSystemStateDataChanged(msg) {
+		t.Fatal("IsSystemStateDataChanged(EncodeSystemState()) = false, want true")
+	}
+}
+
+func TestEncodeSystemStateRoundTrip(t *testing.T) {
+	tests := []SystemState{
+		{},
+		{
+			MainCurrent:         -1,
+			ProgCurrent:         -32768,
+			FilteredMainCurrent: 32767,
+			Temperature:         -20,
+			SupplyVoltage:       0xffff,
+			VCCVoltage:          18000,
+			CentralState:        xStatusEmergencyStop | xStatusTrackVoltageOff,
+			CentralStateEx:      centralStateExHighTemperature | centralStateExRCN213,
+			Capabilities:        0xff,
+		},
+	}
+	for _, in := range tests {
+		got, err := SystemStateFromMessages([]Message{EncodeSystemState(in)})
+		if err != nil {
+			t.Fatalf("SystemStateFromMessages(EncodeSystemState(%+v)) error = %v", in, err)
+		}
+		if got != in {
+			t.Fatalf("SystemStateFromMessages(EncodeSystemState(%+v)) = %+v", in, got)
+		}
+	}
+}

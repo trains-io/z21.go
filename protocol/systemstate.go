@@ -39,6 +39,22 @@ func SystemStateGetData() Message {
 	return Message{Header: HeaderLANSystemStateGetData}
 }
 
+// EncodeSystemState builds LAN_SYSTEMSTATE_DATACHANGED (spec §2.18).
+// The reserved byte 14 is always zero.
+func EncodeSystemState(s SystemState) Message {
+	data := make([]byte, 16)
+	binary.LittleEndian.PutUint16(data[0:2], uint16(s.MainCurrent))
+	binary.LittleEndian.PutUint16(data[2:4], uint16(s.ProgCurrent))
+	binary.LittleEndian.PutUint16(data[4:6], uint16(s.FilteredMainCurrent))
+	binary.LittleEndian.PutUint16(data[6:8], uint16(s.Temperature))
+	binary.LittleEndian.PutUint16(data[8:10], s.SupplyVoltage)
+	binary.LittleEndian.PutUint16(data[10:12], s.VCCVoltage)
+	data[12] = s.CentralState
+	data[13] = s.CentralStateEx
+	data[15] = s.Capabilities
+	return Message{Header: HeaderLANSystemStateDataChanged, Data: data}
+}
+
 // SystemStateFromMessages extracts system state from a Call reply.
 func SystemStateFromMessages(msgs []Message) (SystemState, error) {
 	for _, msg := range msgs {
