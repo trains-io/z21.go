@@ -2,8 +2,8 @@
 
 .DEFAULT_GOAL := help
 
-# Default Z21 LAN simulator for integration tests (override: make test-integration Z21_TESTSERVER_IMAGE=...)
-Z21_TESTSERVER_IMAGE ?= ghcr.io/trains-io/z21-sim:latest
+# Default Z21 LAN reference server for integration tests (override: make test-integration Z21_TESTSERVER_IMAGE=...)
+Z21_TESTSERVER_IMAGE ?= ghcr.io/trains-io/z21-ref:latest
 export Z21_TESTSERVER_IMAGE
 
 help: ## Show targets
@@ -13,5 +13,5 @@ help: ## Show targets
 test: ## Run unit tests
 	go test ./... -count=1
 
-test-integration: ## Run integration tests (requires Docker; uses ghcr.io/trains-io/z21-sim by default)
+test-integration: ## Run integration tests (requires Docker; uses ghcr.io/trains-io/z21-ref by default)
 	go test -tags=integration ./client/... -count=1 -timeout=10m

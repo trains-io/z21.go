@@ -33,7 +33,7 @@ info, _ := protocol.HWInfoFromMessages(msgs)
 
 ### Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to build, run tests, and run integration tests against the z21 simulator.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to build, run tests, and run integration tests against the z21 reference implementation.
 
 ### License
 

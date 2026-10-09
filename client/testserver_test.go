@@ -102,7 +102,7 @@ func startSharedTestServer() (addr string, terminate func(), err error) {
 			KeepImage:  true,
 		}
 	} else {
-		return "", nil, fmt.Errorf("set Z21_TESTSERVER_IMAGE (recommended: ghcr.io/trains-io/z21-sim:latest) or Z21_TESTSERVER_DOCKERFILE")
+		return "", nil, fmt.Errorf("set Z21_TESTSERVER_IMAGE (recommended: ghcr.io/trains-io/z21-ref:latest) or Z21_TESTSERVER_DOCKERFILE")
 	}
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{

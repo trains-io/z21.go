@@ -21,5 +21,5 @@ jobs:
 
       - name: Integration tests
         env:
-          Z21_TESTSERVER_IMAGE: ghcr.io/trains-io/z21-sim:latest
+          Z21_TESTSERVER_IMAGE: ghcr.io/trains-io/z21-ref:latest
         run: go test -tags=integration ./... -count=1 -timeout=10m

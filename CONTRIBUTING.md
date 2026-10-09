@@ -61,7 +61,7 @@ Integration tests are in `client/` and gated by the `integration` build tag. The
 make test-integration
 ```
 
-By default, `make test-integration` uses `ghcr.io/trains-io/z21-sim:latest`. Override with:
+By default, `make test-integration` uses `ghcr.io/trains-io/z21-ref:latest`. Override with:
 
 ```bash
 make test-integration Z21_TESTSERVER_IMAGE=z21-testserver:local
@@ -84,7 +84,7 @@ If Docker is not installed or not running, integration tests skip rather than fa
 ### Local Dockerfile
 
 ```bash
-export Z21_TESTSERVER_DOCKERFILE=/path/to/z21-sim
+export Z21_TESTSERVER_DOCKERFILE=/path/to/z21-ref
 go test -tags=integration ./client/... -count=1 -timeout=10m
 ```
 
