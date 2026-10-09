@@ -73,6 +73,53 @@ func SetCANBoosterTrackPower(netID uint16, power CANBoosterTrackPower) Message {
 	return Message{Header: HeaderLANCANBoosterSetTrackPower, Data: data}
 }
 
+// EncodeCANDeviceDescription builds the LAN_CAN_DEVICE_GET_DESCRIPTION reply (spec §10.2.1).
+// Names longer than CANBoosterNameLen-1 bytes are truncated so the field stays
+// NUL-terminated.
+func EncodeCANDeviceDescription(netID uint16, name string) Message {
+	data := make([]byte, 2+CANBoosterNameLen)
+	binary.LittleEndian.PutUint16(data[0:2], netID)
+	copy(data[2:2+CANBoosterNameLen-1], name)
+	return Message{Header: HeaderLANCANDeviceGetDescription, Data: data}
+}
+
+// EncodeCANBoosterSystemState builds LAN_CAN_BOOSTER_SYSTEMSTATE_CHGD (spec §10.2.3).
+func EncodeCANBoosterSystemState(s CANBoosterSystemState) Message {
+	data := make([]byte, canBoosterSystemStateLen)
+	binary.LittleEndian.PutUint16(data[0:2], s.NetID)
+	binary.LittleEndian.PutUint16(data[2:4], s.OutputPort)
+	binary.LittleEndian.PutUint16(data[4:6], s.State)
+	binary.LittleEndian.PutUint16(data[6:8], s.VCCVoltage)
+	binary.LittleEndian.PutUint16(data[8:10], s.Current)
+	return Message{Header: HeaderLANCANBoosterSystemState, Data: data}
+}
+
+// ParseGetCANDeviceDescription decodes the NetID from a LAN_CAN_DEVICE_GET_DESCRIPTION request (spec §10.2.1).
+func ParseGetCANDeviceDescription(data []byte) (netID uint16, err error) {
+	if len(data) < 2 {
+		return 0, fmt.Errorf("z21: LAN_CAN_DEVICE_GET_DESCRIPTION too short (%d bytes)", len(data))
+	}
+	return binary.LittleEndian.Uint16(data[0:2]), nil
+}
+
+// ParseSetCANDeviceDescription decodes a LAN_CAN_DEVICE_SET_DESCRIPTION request (spec §10.2.2).
+func ParseSetCANDeviceDescription(data []byte) (netID uint16, name string, err error) {
+	if len(data) < 2+CANBoosterNameLen {
+		return 0, "", fmt.Errorf("z21: LAN_CAN_DEVICE_SET_DESCRIPTION too short (%d bytes)", len(data))
+	}
+	netID = binary.LittleEndian.Uint16(data[0:2])
+	name = parseCANDeviceName(data[2 : 2+CANBoosterNameLen])
+	return netID, name, nil
+}
+
+// ParseSetCANBoosterTrackPower decodes a LAN_CAN_BOOSTER_SET_TRACKPOWER request (spec §10.2.4).
+func ParseSetCANBoosterTrackPower(data []byte) (netID uint16, power CANBoosterTrackPower, err error) {
+	if len(data) < 3 {
+		return 0, 0, fmt.Errorf("z21: LAN_CAN_BOOSTER_SET_TRACKPOWER too short (%d bytes)", len(data))
+	}
+	return binary.LittleEndian.Uint16(data[0:2]), CANBoosterTrackPower(data[2]), nil
+}
+
 // ParseCANDeviceDescription decodes a LAN_CAN_DEVICE_GET_DESCRIPTION reply (spec §10.2.1).
 func ParseCANDeviceDescription(data []byte) (netID uint16, name string, err error) {
 	if len(data) < 2+CANBoosterNameLen {

@@ -93,3 +93,95 @@ func TestCANDetectorReportLocoAddresses(t *testing.T) {
 	require.Equal(t, CANDetectorLocoDirectionForward, addrs[0].Direction)
 	require.Equal(t, uint16(0), addrs[1].Address)
 }
+
+func TestEncodeCANDeviceDescription(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		wantName string
+	}{
+		{name: "empty", in: "", wantName: ""},
+		{name: "short", in: "Booster 1", wantName: "Booster 1"},
+		{name: "max length", in: "abcdefghijklmno", wantName: "abcdefghijklmno"},
+		{name: "truncated", in: "abcdefghijklmnopqrst", wantName: "abcdefghijklmno"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := EncodeCANDeviceDescription(0xC101, tt.in)
+			require.Equal(t, HeaderLANCANDeviceGetDescription, msg.Header)
+			require.Len(t, msg.Data, 2+CANBoosterNameLen)
+			require.Equal(t, byte(0), msg.Data[len(msg.Data)-1], "name field must stay NUL-terminated")
+
+			netID, name, err := ParseCANDeviceDescription(msg.Data)
+			require.NoError(t, err)
+			require.Equal(t, uint16(0xC101), netID)
+			require.Equal(t, tt.wantName, name)
+		})
+	}
+}
+
+func TestEncodeCANBoosterSystemState(t *testing.T) {
+	in := CANBoosterSystemState{
+		NetID:      0xC101,
+		OutputPort: 1,
+		State:      CANBoosterStateTrackVoltageOff,
+		VCCVoltage: 10000,
+		Current:    100,
+	}
+	msg := EncodeCANBoosterSystemState(in)
+	require.Equal(t, HeaderLANCANBoosterSystemState, msg.Header)
+	require.Equal(t, []byte{0x01, 0xC1, 0x01, 0x00, 0x80, 0x00, 0x10, 0x27, 0x64, 0x00}, msg.Data)
+	require.True(t, IsCANBoosterSystemStateChanged(msg))
+
+	for _, in := range []CANBoosterSystemState{{}, in, {NetID: 0xffff, OutputPort: 2, State: 0xffff, VCCVoltage: 0xffff, Current: 0xffff}} {
+		got, err := CANBoosterSystemStatesFromMessages([]Message{EncodeCANBoosterSystemState(in)})
+		require.NoError(t, err)
+		require.Equal(t, []CANBoosterSystemState{in}, got)
+	}
+}
+
+func TestParseGetCANDeviceDescription(t *testing.T) {
+	for _, in := range []uint16{0, 0xC101, 0xffff} {
+		got, err := ParseGetCANDeviceDescription(GetCANDeviceDescription(in).Data)
+		require.NoError(t, err)
+		require.Equal(t, in, got)
+	}
+
+	_, err := ParseGetCANDeviceDescription([]byte{0x01})
+	require.Error(t, err)
+}
+
+func TestParseSetCANDeviceDescription(t *testing.T) {
+	for _, name := range []string{"", "Booster 1", "abcdefghijklmno"} {
+		req, err := SetCANDeviceDescription(0xC101, name)
+		require.NoError(t, err)
+
+		netID, got, err := ParseSetCANDeviceDescription(req.Data)
+		require.NoError(t, err)
+		require.Equal(t, uint16(0xC101), netID)
+		require.Equal(t, name, got)
+	}
+
+	_, _, err := ParseSetCANDeviceDescription(make([]byte, 2+CANBoosterNameLen-1))
+	require.Error(t, err)
+}
+
+func TestParseSetCANBoosterTrackPower(t *testing.T) {
+	powers := []CANBoosterTrackPower{
+		CANBoosterTrackPowerDeactivateAll,
+		CANBoosterTrackPowerActivateAll,
+		CANBoosterTrackPowerDeactivateOut1,
+		CANBoosterTrackPowerActivateOut1,
+		CANBoosterTrackPowerDeactivateOut2,
+		CANBoosterTrackPowerActivateOut2,
+	}
+	for _, power := range powers {
+		netID, got, err := ParseSetCANBoosterTrackPower(SetCANBoosterTrackPower(0xC101, power).Data)
+		require.NoError(t, err)
+		require.Equal(t, uint16(0xC101), netID)
+		require.Equal(t, power, got)
+	}
+
+	_, _, err := ParseSetCANBoosterTrackPower([]byte{0x01, 0xC1})
+	require.Error(t, err)
+}

@@ -63,6 +63,18 @@ func GetAllCANDetectors() Message {
 	return GetCANDetector(CANDetectorPollAll)
 }
 
+// ParseGetCANDetector decodes the NetID from a LAN_CAN_DETECTOR poll request (spec §10.1).
+// CANDetectorPollAll means every detector.
+func ParseGetCANDetector(data []byte) (netID uint16, err error) {
+	if len(data) < 3 {
+		return 0, fmt.Errorf("z21: LAN_CAN_DETECTOR poll too short (%d bytes)", len(data))
+	}
+	if data[0] != cANDetectorPollType {
+		return 0, fmt.Errorf("z21: unsupported LAN_CAN_DETECTOR poll type 0x%02x", data[0])
+	}
+	return binary.LittleEndian.Uint16(data[1:3]), nil
+}
+
 // ParseCANDetector decodes a LAN_CAN_DETECTOR reply payload.
 func ParseCANDetector(data []byte) (CANDetectorReport, error) {
 	if len(data) < 10 {
@@ -76,6 +88,18 @@ func ParseCANDetector(data []byte) (CANDetectorReport, error) {
 		Value1: binary.LittleEndian.Uint16(data[6:8]),
 		Value2: binary.LittleEndian.Uint16(data[8:10]),
 	}, nil
+}
+
+// EncodeCANDetector builds a LAN_CAN_DETECTOR report (spec §10.1).
+func EncodeCANDetector(report CANDetectorReport) Message {
+	data := make([]byte, 10)
+	binary.LittleEndian.PutUint16(data[0:2], report.NetID)
+	binary.LittleEndian.PutUint16(data[2:4], report.Addr)
+	data[4] = report.Port
+	data[5] = report.Type
+	binary.LittleEndian.PutUint16(data[6:8], report.Value1)
+	binary.LittleEndian.PutUint16(data[8:10], report.Value2)
+	return Message{Header: HeaderLANCANDetector, Data: data}
 }
 
 // CANDetectorReportsFromMessages extracts LAN_CAN_DETECTOR replies.

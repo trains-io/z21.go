@@ -62,3 +62,71 @@ func TestCANDetectorReportsFromMessages(t *testing.T) {
 		t.Fatalf("reports = %+v", reports)
 	}
 }
+
+func TestEncodeCANDetector(t *testing.T) {
+	msg := EncodeCANDetector(CANDetectorReport{
+		NetID:  0xC101,
+		Addr:   1,
+		Port:   0,
+		Type:   CANDetectorTypeOccupancy,
+		Value1: 0x0100,
+	})
+	if msg.Header != HeaderLANCANDetector {
+		t.Fatalf("Header = %#x, want %#x", msg.Header, HeaderLANCANDetector)
+	}
+	want := []byte{0x01, 0xc1, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00}
+	if string(msg.Data) != string(want) {
+		t.Fatalf("EncodeCANDetector(occupancy free).Data = % x, want % x", msg.Data, want)
+	}
+	if !IsCANDetectorReport(msg) {
+		t.Fatal("IsCANDetectorReport(EncodeCANDetector()) = false, want true")
+	}
+}
+
+func TestEncodeCANDetectorRoundTrip(t *testing.T) {
+	tests := []CANDetectorReport{
+		{},
+		{NetID: 0xC101, Addr: 1, Port: 7, Type: CANDetectorTypeOccupancy, Value1: 0x1100},
+		{NetID: 0xC102, Addr: 256, Port: 3, Type: CANDetectorTypeLocoAddressBase, Value1: 0x4003, Value2: 0x8000 | 1234},
+		{NetID: 0xffff, Addr: 0xffff, Port: 0xff, Type: 0xff, Value1: 0xffff, Value2: 0xffff},
+	}
+	for _, in := range tests {
+		got, err := CANDetectorReportsFromMessages([]Message{EncodeCANDetector(in)})
+		if err != nil {
+			t.Fatalf("CANDetectorReportsFromMessages(EncodeCANDetector(%+v)) error = %v", in, err)
+		}
+		if len(got) != 1 || got[0] != in {
+			t.Fatalf("CANDetectorReportsFromMessages(EncodeCANDetector(%+v)) = %+v", in, got)
+		}
+	}
+}
+
+func TestParseGetCANDetector(t *testing.T) {
+	for _, in := range []uint16{0x0000, 0xC101, CANDetectorPollAll, 0xffff} {
+		got, err := ParseGetCANDetector(GetCANDetector(in).Data)
+		if err != nil {
+			t.Fatalf("ParseGetCANDetector(GetCANDetector(%#04x)) error = %v", in, err)
+		}
+		if got != in {
+			t.Fatalf("ParseGetCANDetector(GetCANDetector(%#04x)) = %#04x", in, got)
+		}
+	}
+}
+
+func TestParseGetCANDetectorErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{name: "empty", data: nil},
+		{name: "too short", data: []byte{0x00, 0x01}},
+		{name: "unknown poll type", data: []byte{0x01, 0x00, 0xd0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := ParseGetCANDetector(tt.data); err == nil {
+				t.Fatalf("ParseGetCANDetector(% x) error = nil, want error", tt.data)
+			}
+		})
+	}
+}
