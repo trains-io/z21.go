@@ -26,6 +26,25 @@ func parseXBusBC(data []byte, db0 byte) error {
 	return nil
 }
 
+func encodeXBusBC(db0 byte) Message {
+	return EncodeLANX(xHeaderXBusBC, db0)
+}
+
+// EncodeBCProgrammingMode builds LAN_X_BC_PROGRAMMING_MODE (spec §2.9).
+func EncodeBCProgrammingMode() Message {
+	return encodeXBusBC(xBCDB0ProgrammingMode)
+}
+
+// EncodeBCShortCircuit builds LAN_X_BC_TRACK_SHORT_CIRCUIT (spec §2.10).
+func EncodeBCShortCircuit() Message {
+	return encodeXBusBC(xBCDB0ShortCircuit)
+}
+
+// EncodeUnknownCommand builds LAN_X_UNKNOWN_COMMAND (spec §2.11).
+func EncodeUnknownCommand() Message {
+	return encodeXBusBC(xBCDB0UnknownCommand)
+}
+
 // ParseBCProgrammingMode decodes LAN_X_BC_PROGRAMMING_MODE (spec §2.9).
 func ParseBCProgrammingMode(data []byte) error {
 	return parseXBusBC(data, xBCDB0ProgrammingMode)

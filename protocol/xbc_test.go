@@ -96,3 +96,29 @@ func TestFormatCentralState(t *testing.T) {
 		t.Fatalf("FormatCentralState() = %q, want short circuit", got)
 	}
 }
+
+func TestEncodeXBusBCMessages(t *testing.T) {
+	tests := []struct {
+		name  string
+		msg   Message
+		want  []byte
+		parse func([]byte) error
+	}{
+		{name: "programming mode", msg: EncodeBCProgrammingMode(), want: []byte{0x61, 0x02, 0x63}, parse: ParseBCProgrammingMode},
+		{name: "short circuit", msg: EncodeBCShortCircuit(), want: []byte{0x61, 0x08, 0x69}, parse: ParseBCShortCircuit},
+		{name: "unknown command", msg: EncodeUnknownCommand(), want: []byte{0x61, 0x82, 0xe3}, parse: ParseUnknownCommand},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.msg.Header != HeaderLANX {
+				t.Fatalf("Header = %#x, want %#x", tt.msg.Header, HeaderLANX)
+			}
+			if string(tt.msg.Data) != string(tt.want) {
+				t.Fatalf("Data = % x, want % x", tt.msg.Data, tt.want)
+			}
+			if err := tt.parse(tt.msg.Data); err != nil {
+				t.Fatalf("parse(% x) error = %v", tt.msg.Data, err)
+			}
+		})
+	}
+}

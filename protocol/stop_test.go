@@ -58,3 +58,17 @@ func TestMessageNameSetStop(t *testing.T) {
 		t.Fatalf("MessageName(BC_STOPPED) = %q, want LAN_X_BC_STOPPED", got)
 	}
 }
+
+func TestEncodeBCStopped(t *testing.T) {
+	msg := EncodeBCStopped()
+	if msg.Header != HeaderLANX {
+		t.Fatalf("Header = %#x, want %#x", msg.Header, HeaderLANX)
+	}
+	want := []byte{0x81, 0x00, 0x81}
+	if string(msg.Data) != string(want) {
+		t.Fatalf("EncodeBCStopped().Data = % x, want % x", msg.Data, want)
+	}
+	if err := BCStoppedFromMessages([]Message{msg}); err != nil {
+		t.Fatalf("BCStoppedFromMessages(EncodeBCStopped()) error = %v", err)
+	}
+}

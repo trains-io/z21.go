@@ -19,6 +19,11 @@ func SetStop() Message {
 	}
 }
 
+// EncodeBCStopped builds LAN_X_BC_STOPPED (spec §2.14).
+func EncodeBCStopped() Message {
+	return EncodeLANX(xHeaderBCStopped, xBCStoppedDB0)
+}
+
 // BCStoppedFromMessages confirms a LAN_X_BC_STOPPED reply (spec §2.14).
 func BCStoppedFromMessages(msgs []Message) error {
 	for _, msg := range msgs {

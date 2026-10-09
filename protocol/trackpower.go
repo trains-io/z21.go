@@ -20,6 +20,14 @@ func SetTrackPower(on bool) Message {
 	}
 }
 
+// EncodeTrackPowerBC builds LAN_X_BC_TRACK_POWER_ON or LAN_X_BC_TRACK_POWER_OFF (spec §2.7 / §2.8).
+func EncodeTrackPowerBC(on bool) Message {
+	if on {
+		return encodeXBusBC(xBCDB0TrackPowerOn)
+	}
+	return encodeXBusBC(xBCDB0TrackPowerOff)
+}
+
 // TrackPowerFromMessages extracts the track power state from a Call reply.
 func TrackPowerFromMessages(msgs []Message) (bool, error) {
 	for _, msg := range msgs {
