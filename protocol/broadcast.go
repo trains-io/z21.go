@@ -113,6 +113,21 @@ func GetBroadcastFlags() Message {
 	return Message{Header: HeaderLANGetBroadcastFlags}
 }
 
+// EncodeBroadcastFlags builds the LAN_GET_BROADCASTFLAGS reply (spec §2.17).
+func EncodeBroadcastFlags(flags uint32) Message {
+	data := make([]byte, 4)
+	binary.LittleEndian.PutUint32(data, flags)
+	return Message{Header: HeaderLANGetBroadcastFlags, Data: data}
+}
+
+// ParseSetBroadcastFlags decodes the mask from a LAN_SET_BROADCASTFLAGS request (spec §2.16).
+func ParseSetBroadcastFlags(data []byte) (uint32, error) {
+	if len(data) < 4 {
+		return 0, fmt.Errorf("z21: LAN_SET_BROADCASTFLAGS too short (%d bytes)", len(data))
+	}
+	return binary.LittleEndian.Uint32(data[0:4]), nil
+}
+
 // BroadcastFlagsFromMessages extracts broadcast flags from a Call reply.
 func BroadcastFlagsFromMessages(msgs []Message) (uint32, error) {
 	for _, msg := range msgs {
