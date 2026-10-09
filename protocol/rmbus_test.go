@@ -59,3 +59,54 @@ func TestRMBusStatusFromMessages(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, statuses, 1)
 }
+
+func TestEncodeRMBusStatusWire(t *testing.T) {
+	got, err := EncodeRMBusStatus(RMBusStatus{
+		GroupIndex: 1,
+		Status:     [RMBusInputsPerGroup]byte{0x01, 0x00, 0xC5},
+	}).Marshal()
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		0x0F, 0x00, 0x80, 0x00, // DataLen 15, LAN_RMBUS_DATACHANGED
+		0x01, // group index
+		0x01, 0x00, 0xC5, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}, got)
+}
+
+func TestEncodeRMBusStatusRoundTrip(t *testing.T) {
+	full := RMBusStatus{GroupIndex: 1}
+	for i := range full.Status {
+		full.Status[i] = 0xFF
+	}
+	for _, in := range []RMBusStatus{{}, full} {
+		msg := EncodeRMBusStatus(in)
+		require.True(t, IsRMBusDataChanged(msg))
+		got, err := RMBusStatusFromMessages([]Message{msg})
+		require.NoError(t, err)
+		require.Equal(t, []RMBusStatus{in}, got)
+	}
+}
+
+func TestParseGetRMBusData(t *testing.T) {
+	for _, group := range []uint8{0, 1} {
+		got, err := ParseGetRMBusData(GetRMBusData(group).Data)
+		require.NoError(t, err)
+		require.Equal(t, group, got)
+	}
+	_, err := ParseGetRMBusData(nil)
+	require.Error(t, err)
+}
+
+func TestParseProgramRMBusModule(t *testing.T) {
+	for _, addr := range []byte{RMBusProgramEndAddress, 1, 20} {
+		req, err := ProgramRMBusModule(addr)
+		require.NoError(t, err)
+		got, err := ParseProgramRMBusModule(req.Data)
+		require.NoError(t, err)
+		require.Equal(t, addr, got)
+	}
+	_, err := ParseProgramRMBusModule([]byte{21})
+	require.Error(t, err)
+	_, err = ParseProgramRMBusModule(nil)
+	require.Error(t, err)
+}

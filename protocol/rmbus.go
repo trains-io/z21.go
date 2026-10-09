@@ -37,6 +37,34 @@ func ProgramRMBusModule(address byte) (Message, error) {
 	}, nil
 }
 
+// ParseGetRMBusData decodes the group index from LAN_RMBUS_GETDATA (spec §7.2).
+func ParseGetRMBusData(data []byte) (groupIndex uint8, err error) {
+	if len(data) < 1 {
+		return 0, fmt.Errorf("z21: LAN_RMBUS_GETDATA too short (%d bytes)", len(data))
+	}
+	return data[0], nil
+}
+
+// ParseProgramRMBusModule decodes the module address from LAN_RMBUS_PROGRAMMODULE (spec §7.3).
+// The address is 1–20, or RMBusProgramEndAddress to finish programming.
+func ParseProgramRMBusModule(data []byte) (address byte, err error) {
+	if len(data) < 1 {
+		return 0, fmt.Errorf("z21: LAN_RMBUS_PROGRAMMODULE too short (%d bytes)", len(data))
+	}
+	if data[0] > 20 {
+		return 0, fmt.Errorf("z21: R-BUS module address must be 0 or 1..20, got %d", data[0])
+	}
+	return data[0], nil
+}
+
+// EncodeRMBusStatus builds LAN_RMBUS_DATACHANGED (spec §7.1).
+func EncodeRMBusStatus(s RMBusStatus) Message {
+	data := make([]byte, 1+RMBusInputsPerGroup)
+	data[0] = s.GroupIndex
+	copy(data[1:], s.Status[:])
+	return Message{Header: HeaderLANRMBusDataChanged, Data: data}
+}
+
 // RMBusModuleAddress maps a group index and byte offset to a module address (1–20).
 func RMBusModuleAddress(groupIndex, offset uint8) (uint8, error) {
 	if offset >= RMBusInputsPerGroup {
