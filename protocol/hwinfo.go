@@ -32,6 +32,21 @@ func GetSerialNumber() Message {
 	return Message{Header: HeaderLANGetSerialNumber}
 }
 
+// EncodeSerialNumber builds the LAN_GET_SERIAL_NUMBER reply (spec §2.1).
+func EncodeSerialNumber(serial uint32) Message {
+	data := make([]byte, 4)
+	binary.LittleEndian.PutUint32(data, serial)
+	return Message{Header: HeaderLANGetSerialNumber, Data: data}
+}
+
+// EncodeHWInfo builds the LAN_GET_HWINFO reply (spec §2.20).
+func EncodeHWInfo(info HWInfo) Message {
+	data := make([]byte, 8)
+	binary.LittleEndian.PutUint32(data[0:4], info.HwType)
+	binary.LittleEndian.PutUint32(data[4:8], info.FirmwareVersion)
+	return Message{Header: HeaderLANGetHWInfo, Data: data}
+}
+
 // HWInfoFromMessages extracts hardware info from a Call reply.
 func HWInfoFromMessages(msgs []Message) (HWInfo, error) {
 	for _, msg := range msgs {
