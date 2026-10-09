@@ -19,6 +19,7 @@ From the repository root:
 ```bash
 make check             # gofmt, go vet and unit tests with -race (same as CI, no Docker)
 make test-integration  # client tests against a Z21 simulator in Docker
+make fuzz              # fuzz the protocol codecs (FUZZTIME=30s per target by default)
 ```
 
 Run `make check` before pushing; CI runs the same targets.
