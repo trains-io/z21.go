@@ -58,9 +58,40 @@ func TestParseLocoInfo(t *testing.T) {
 	require.Equal(t, byte(4), info.SpeedSteps)
 	require.True(t, info.Forward)
 	require.Equal(t, byte(5), info.Speed)
-	require.True(t, info.Headlight)
+	require.False(t, info.Headlight)
+	require.False(t, info.DoubleTraction)
+	require.False(t, info.SmartSearch)
 	require.Equal(t, byte(0x0A), info.FunctionsF1F4)
 	require.Equal(t, byte(0xFF), info.FunctionsF5F12)
+}
+
+func TestParseLocoInfoDB4(t *testing.T) {
+	tests := []struct {
+		name           string
+		db4            byte
+		doubleTraction bool
+		smartSearch    bool
+		headlight      bool
+		f1f4           byte
+	}{
+		{name: "none", db4: 0x00},
+		{name: "F1-F4 only", db4: 0x0F, f1f4: 0x0F},
+		{name: "F0 only", db4: 0x10, headlight: true},
+		{name: "smart search only", db4: 0x20, smartSearch: true},
+		{name: "double traction only", db4: 0x40, doubleTraction: true},
+		{name: "all", db4: 0x7F, doubleTraction: true, smartSearch: true, headlight: true, f1f4: 0x0F},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := appendLANXXOR([]byte{0xEF, 0x00, 0x03, 0x04, 0x00, tt.db4})
+			info, err := ParseLocoInfo(data)
+			require.NoError(t, err)
+			require.Equal(t, tt.doubleTraction, info.DoubleTraction, "DoubleTraction")
+			require.Equal(t, tt.smartSearch, info.SmartSearch, "SmartSearch")
+			require.Equal(t, tt.headlight, info.Headlight, "Headlight")
+			require.Equal(t, tt.f1f4, info.FunctionsF1F4, "FunctionsF1F4")
+		})
+	}
 }
 
 func TestLocoInfoFromMessages(t *testing.T) {

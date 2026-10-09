@@ -193,10 +193,10 @@ func ParseLocoInfo(data []byte) (LocoInfo, error) {
 		SpeedSteps:     (data[3] >> 0) & 0x07,
 		Forward:        data[4]&0x80 != 0,
 		Speed:          data[4] & 0x7F,
-		DoubleTraction: data[5]&0x08 != 0,
-		SmartSearch:    data[5]&0x04 != 0,
-		Headlight:      data[5]&0x02 != 0,
-		FunctionsF1F4:  (data[5] >> 0) & 0x0F,
+		DoubleTraction: data[5]&0x40 != 0,
+		SmartSearch:    data[5]&0x20 != 0,
+		Headlight:      data[5]&0x10 != 0,
+		FunctionsF1F4:  data[5] & 0x0F,
 	}
 	if len(data) >= 8 {
 		info.FunctionsF5F12 = data[6]
