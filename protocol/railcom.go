@@ -38,6 +38,34 @@ func GetRailComData(locoAddress uint16) Message {
 	return Message{Header: HeaderLANRailComGetData, Data: data}
 }
 
+// ParseGetRailComData decodes LAN_RAILCOM_GETDATA (spec §8.2).
+// It returns RailComPollNextAddress for the poll-next form, for type 0, and for
+// the deprecated request without data, which the ZIMO reference server also accepts.
+func ParseGetRailComData(data []byte) (locoAddress uint16, err error) {
+	switch {
+	case len(data) == 0:
+		return RailComPollNextAddress, nil
+	case len(data) < 3:
+		return 0, fmt.Errorf("z21: LAN_RAILCOM_GETDATA too short (%d bytes)", len(data))
+	case data[0] == 0:
+		return RailComPollNextAddress, nil
+	}
+	return binary.LittleEndian.Uint16(data[1:3]), nil
+}
+
+// EncodeRailComData builds LAN_RAILCOM_DATACHANGED (spec §8.1).
+// Reserved bytes 8 and 12 are zero.
+func EncodeRailComData(rc RailComData) Message {
+	data := make([]byte, railComDataMinLen)
+	binary.LittleEndian.PutUint16(data[0:2], rc.LocoAddress)
+	binary.LittleEndian.PutUint32(data[2:6], rc.ReceiveCounter)
+	binary.LittleEndian.PutUint16(data[6:8], rc.ErrorCounter)
+	data[9] = rc.Options
+	data[10] = rc.Speed
+	data[11] = rc.QoS
+	return Message{Header: HeaderLANRailComDataChanged, Data: data}
+}
+
 // HasRailComOption reports whether opt includes flag.
 func HasRailComOption(opt, flag byte) bool {
 	return opt&flag != 0
