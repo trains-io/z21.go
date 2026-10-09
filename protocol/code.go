@@ -13,6 +13,11 @@ func GetCode() Message {
 	return Message{Header: HeaderLANGetCode}
 }
 
+// EncodeCode builds the LAN_GET_CODE reply (spec §2.21).
+func EncodeCode(code byte) Message {
+	return Message{Header: HeaderLANGetCode, Data: []byte{code}}
+}
+
 // CodeFromMessages extracts the lock code from a Call reply.
 func CodeFromMessages(msgs []Message) (byte, error) {
 	for _, msg := range msgs {
