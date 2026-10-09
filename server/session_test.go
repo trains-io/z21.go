@@ -157,6 +157,69 @@ func TestServerBroadcast(t *testing.T) {
 	expectNoPacket(t, other)
 }
 
+// subscribeLoco subscribes c to loco addr and waits for the handler's reply.
+func subscribeLoco(t *testing.T, c *client.Client, addr uint16) {
+	t.Helper()
+	if _, err := c.Call(testContext(t), protocol.GetLocoInfo(addr)); err != nil {
+		t.Fatalf("Call GetLocoInfo(%d): %v", addr, err)
+	}
+}
+
+func locoHandler(w server.ResponseWriter, r *server.Request) {
+	if addr, err := protocol.ParseGetLocoInfo(r.Message.Data); err == nil {
+		w.Reply(protocol.EncodeLocoInfo(protocol.LocoInfo{Address: addr, SpeedSteps: 4}))
+		return
+	}
+	if d, err := protocol.ParseSetLocoDrive(r.Message.Data); err == nil {
+		w.BroadcastLocoInfo(protocol.LocoInfo{Address: d.Address, SpeedSteps: 4, Forward: d.Forward, Speed: d.Speed})
+	}
+}
+
+func TestServerBroadcastLocoInfo(t *testing.T) {
+	srv := startServer(t, server.WithHandler(server.HandlerFunc(locoHandler)))
+	subscribed, all, otherLoco, noFlags := dial(t, srv), dial(t, srv), dial(t, srv), dial(t, srv)
+	subscribe(t, subscribed, protocol.BroadcastFlagXpressNet)
+	subscribeLoco(t, subscribed, 3)
+	subscribe(t, all, protocol.BroadcastFlagAllLocoInfo)
+	subscribe(t, otherLoco, protocol.BroadcastFlagXpressNet)
+	subscribeLoco(t, otherLoco, 4)
+	subscribeLoco(t, noFlags, 3)
+
+	if n := srv.BroadcastLocoInfo(protocol.LocoInfo{Address: 3, SpeedSteps: 4, Speed: 42}); n != 2 {
+		t.Fatalf("BroadcastLocoInfo reached %d clients, want 2", n)
+	}
+	expectPacket(t, subscribed, protocol.HeaderLANX)
+	expectPacket(t, all, protocol.HeaderLANX)
+	expectNoPacket(t, otherLoco)
+	expectNoPacket(t, noFlags)
+}
+
+func TestResponseWriterBroadcastLocoInfoIncludesSender(t *testing.T) {
+	srv := startServer(t, server.WithHandler(server.HandlerFunc(locoHandler)))
+	sender, observer := dial(t, srv), dial(t, srv)
+	for _, c := range []*client.Client{sender, observer} {
+		subscribe(t, c, protocol.BroadcastFlagXpressNet)
+		subscribeLoco(t, c, 3)
+	}
+
+	if err := sender.Send(testContext(t), protocol.SetLocoDrive(3, protocol.LocoSpeedSteps128, true, 42)); err != nil {
+		t.Fatalf("Send SetLocoDrive: %v", err)
+	}
+	for name, c := range map[string]*client.Client{"sender": sender, "observer": observer} {
+		msgs, err := c.ReadPacket(testContext(t))
+		if err != nil {
+			t.Fatalf("%s ReadPacket: %v", name, err)
+		}
+		info, err := protocol.LocoInfoFromMessages(msgs)
+		if err != nil {
+			t.Fatalf("%s LocoInfoFromMessages: %v", name, err)
+		}
+		if info.Address != 3 || info.Speed != 42 || !info.Forward {
+			t.Fatalf("%s got %+v, want loco 3 forward at speed 42", name, info)
+		}
+	}
+}
+
 func TestServerBroadcastWithoutMessages(t *testing.T) {
 	srv := startServer(t)
 	c := dial(t, srv)

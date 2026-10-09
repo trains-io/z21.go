@@ -43,6 +43,13 @@ type ResponseWriter interface {
 	// bit of flag (protocol.BroadcastFlag*). The sender is excluded; reply to it
 	// with Reply.
 	Broadcast(flag uint32, msgs ...protocol.Message)
+
+	// BroadcastLocoInfo immediately sends LAN_X_LOCO_INFO for info.Address to
+	// every client subscribed to that loco, including the sender, as a real
+	// Z21 does after a drive or function command (spec §4.4). Clients subscribe
+	// with LAN_X_GET_LOCO_INFO; the server tracks this before calling the
+	// handler.
+	BroadcastLocoInfo(info protocol.LocoInfo)
 }
 
 type responseWriter struct {
@@ -56,5 +63,9 @@ func (w *responseWriter) Reply(msgs ...protocol.Message) {
 }
 
 func (w *responseWriter) Broadcast(flag uint32, msgs ...protocol.Message) {
-	w.srv.broadcast(flag, w.sender, msgs)
+	w.srv.send(w.srv.recipients(w.sender, flagMatch(flag)), msgs)
+}
+
+func (w *responseWriter) BroadcastLocoInfo(info protocol.LocoInfo) {
+	w.srv.BroadcastLocoInfo(info)
 }

@@ -110,7 +110,11 @@ func (s *Server) handlePacket(from netip.AddrPort, payload []byte) {
 	w := &responseWriter{srv: s, sender: from}
 	for _, msg := range msgs {
 		c := s.clientFor(from)
-		if s.handleSession(w, c, msg) || s.handler == nil {
+		if s.handleSession(w, c, msg) {
+			continue
+		}
+		s.subscribeLoco(c, msg)
+		if s.handler == nil {
 			continue
 		}
 		s.handler.ServeZ21(w, &Request{Message: msg, Client: c})

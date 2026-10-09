@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/netip"
+	"slices"
 	"testing"
 	"time"
 
@@ -82,6 +83,80 @@ func TestExpiredSessionStartsFresh(t *testing.T) {
 
 	if c := s.clientFor(clientA); c.BroadcastFlags != 0 {
 		t.Fatalf("BroadcastFlags after expiry = %#08x, want 0", c.BroadcastFlags)
+	}
+}
+
+func locos(t *testing.T, s *Server, addr netip.AddrPort) []uint16 {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[addr]
+	if !ok {
+		t.Fatalf("no session for %v", addr)
+	}
+	return slices.Clone(sess.locos)
+}
+
+func TestGetLocoInfoSubscribes(t *testing.T) {
+	tests := []struct {
+		name  string
+		flags uint32
+		req   []uint16 // loco addresses requested in order
+		want  []uint16
+	}{
+		{name: "requires XpressNet flag", flags: protocol.BroadcastFlagSystemState, req: []uint16{3}, want: nil},
+		{name: "subscribes", flags: protocol.BroadcastFlagXpressNet, req: []uint16{3, 1234}, want: []uint16{3, 1234}},
+		{name: "no duplicates", flags: protocol.BroadcastFlagXpressNet, req: []uint16{3, 4, 3}, want: []uint16{3, 4}},
+		{
+			name:  "drops oldest beyond 16",
+			flags: protocol.BroadcastFlagXpressNet,
+			req:   []uint16{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17},
+			want:  []uint16{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := newTestServer(t)
+			send(t, s, clientA, protocol.SetBroadcastFlags(tt.flags))
+			for _, addr := range tt.req {
+				send(t, s, clientA, protocol.GetLocoInfo(addr))
+			}
+			if got := locos(t, s, clientA); !slices.Equal(got, tt.want) {
+				t.Fatalf("subscribed locos = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSetBroadcastFlagsInSamePacketEnablesSubscription(t *testing.T) {
+	s, _ := newTestServer(t)
+	send(t, s, clientA, protocol.SetBroadcastFlags(protocol.BroadcastFlagXpressNet), protocol.GetLocoInfo(3))
+
+	if got := locos(t, s, clientA); !slices.Equal(got, []uint16{3}) {
+		t.Fatalf("subscribed locos = %v, want [3]", got)
+	}
+}
+
+func TestLocoInfoMatch(t *testing.T) {
+	tests := []struct {
+		name  string
+		flags uint32
+		locos []uint16
+		want  bool
+	}{
+		{name: "subscribed with XpressNet", flags: protocol.BroadcastFlagXpressNet, locos: []uint16{3}, want: true},
+		{name: "subscribed to other loco", flags: protocol.BroadcastFlagXpressNet, locos: []uint16{4}, want: false},
+		{name: "subscribed without XpressNet", flags: protocol.BroadcastFlagSystemState, locos: []uint16{3}, want: false},
+		{name: "all loco info", flags: protocol.BroadcastFlagAllLocoInfo, want: true},
+		{name: "no flags", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sess := &session{broadcastFlags: tt.flags, locos: tt.locos}
+			if got := locoInfoMatch(3)(sess); got != tt.want {
+				t.Fatalf("locoInfoMatch(3) = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

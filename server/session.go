@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/trains-io/z21.go/protocol"
@@ -11,10 +12,41 @@ import (
 // forgets it (spec §1.1: clients must communicate at least once per minute).
 const DefaultSessionTimeout = time.Minute
 
+// maxLocoSubscriptions is the number of loco addresses a client can subscribe
+// to; the oldest is dropped first (spec §4).
+const maxLocoSubscriptions = 16
+
 // session is the server-side state of one client, keyed by its UDP address.
 type session struct {
 	broadcastFlags uint32
 	lastSeen       time.Time
+	locos          []uint16 // subscribed loco addresses, oldest first
+}
+
+func (sess *session) subscribedTo(addr uint16) bool {
+	return slices.Contains(sess.locos, addr)
+}
+
+// subscribeLoco handles the subscription side effect of LAN_X_GET_LOCO_INFO,
+// which only applies to clients with BroadcastFlagXpressNet set (spec §4.1).
+func (s *Server) subscribeLoco(c Client, msg protocol.Message) {
+	if msg.Header != protocol.HeaderLANX || c.BroadcastFlags&protocol.BroadcastFlagXpressNet == 0 {
+		return
+	}
+	addr, err := protocol.ParseGetLocoInfo(msg.Data)
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[c.Addr]
+	if !ok || sess.subscribedTo(addr) {
+		return
+	}
+	if len(sess.locos) == maxLocoSubscriptions {
+		sess.locos = slices.Delete(sess.locos, 0, 1)
+	}
+	sess.locos = append(sess.locos, addr)
 }
 
 // clientFor returns the client for addr, creating its session on first contact,
@@ -74,20 +106,36 @@ func (s *Server) handleSession(w *responseWriter, c Client, msg protocol.Message
 	return true
 }
 
-// subscribers returns the addresses of active clients subscribed to any bit of
-// flag, excluding except.
-func (s *Server) subscribers(flag uint32, except netip.AddrPort) []netip.AddrPort {
+// recipients returns the addresses of active clients whose session matches,
+// excluding except.
+func (s *Server) recipients(except netip.AddrPort, match func(*session) bool) []netip.AddrPort {
 	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pruneLocked(now)
 	var out []netip.AddrPort
 	for addr, sess := range s.sessions {
-		if addr != except && sess.broadcastFlags&flag != 0 {
+		if addr != except && match(sess) {
 			out = append(out, addr)
 		}
 	}
 	return out
+}
+
+func flagMatch(flag uint32) func(*session) bool {
+	return func(sess *session) bool { return sess.broadcastFlags&flag != 0 }
+}
+
+// locoInfoMatch selects clients that receive LAN_X_LOCO_INFO for addr: those
+// subscribed to addr with BroadcastFlagXpressNet set, and those with
+// BroadcastFlagAllLocoInfo (spec §2.16, §4.4).
+func locoInfoMatch(addr uint16) func(*session) bool {
+	return func(sess *session) bool {
+		if sess.broadcastFlags&protocol.BroadcastFlagAllLocoInfo != 0 {
+			return true
+		}
+		return sess.broadcastFlags&protocol.BroadcastFlagXpressNet != 0 && sess.subscribedTo(addr)
+	}
 }
 
 // Broadcast sends msgs in one packet to every client subscribed to any bit of
@@ -95,11 +143,19 @@ func (s *Server) subscribers(flag uint32, except netip.AddrPort) []netip.AddrPor
 // It is safe to call from any goroutine, for example to push state changes that
 // do not originate from a client request.
 func (s *Server) Broadcast(flag uint32, msgs ...protocol.Message) int {
-	return s.broadcast(flag, netip.AddrPort{}, msgs)
+	return s.send(s.recipients(netip.AddrPort{}, flagMatch(flag)), msgs)
 }
 
-func (s *Server) broadcast(flag uint32, except netip.AddrPort, msgs []protocol.Message) int {
-	if len(msgs) == 0 {
+// BroadcastLocoInfo sends LAN_X_LOCO_INFO for info.Address to the clients that
+// subscribed to that loco and to clients with BroadcastFlagAllLocoInfo, and
+// returns the number of clients it was sent to. It is safe to call from any
+// goroutine.
+func (s *Server) BroadcastLocoInfo(info protocol.LocoInfo) int {
+	return s.send(s.recipients(netip.AddrPort{}, locoInfoMatch(info.Address)), []protocol.Message{protocol.EncodeLocoInfo(info)})
+}
+
+func (s *Server) send(to []netip.AddrPort, msgs []protocol.Message) int {
+	if len(msgs) == 0 || len(to) == 0 {
 		return 0
 	}
 	out, err := protocol.MarshalAll(msgs...)
@@ -108,7 +164,7 @@ func (s *Server) broadcast(flag uint32, except netip.AddrPort, msgs []protocol.M
 		return 0
 	}
 	sent := 0
-	for _, addr := range s.subscribers(flag, except) {
+	for _, addr := range to {
 		if s.write(addr, out) {
 			sent++
 		}
