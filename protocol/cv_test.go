@@ -78,7 +78,26 @@ func TestPOMLocoWriteByteWireFormat(t *testing.T) {
 func TestPOMLocoWriteBitWireFormat(t *testing.T) {
 	msg := POMLocoWriteBit(3, CVAddressFromNumber(29), 4, true)
 	require.Equal(t, byte(0xE8), msg.Data[4]&0xFC)
-	require.Equal(t, byte(0x24), msg.Data[6]) // bit 4 set
+	require.Equal(t, byte(0x0C), msg.Data[6]) // 0000VPPP: V=1, PPP=4
+}
+
+func TestEncodePOMBitParam(t *testing.T) {
+	tests := []struct {
+		bitPos uint8
+		on     bool
+		want   byte
+	}{
+		{bitPos: 0, on: false, want: 0x00},
+		{bitPos: 0, on: true, want: 0x08},
+		{bitPos: 7, on: false, want: 0x07},
+		{bitPos: 7, on: true, want: 0x0F},
+		{bitPos: 8, on: false, want: 0x00}, // positions above 7 are masked
+	}
+	for _, tt := range tests {
+		if got := encodePOMBitParam(tt.bitPos, tt.on); got != tt.want {
+			t.Fatalf("encodePOMBitParam(%d, %t) = %#02x, want %#02x", tt.bitPos, tt.on, got, tt.want)
+		}
+	}
 }
 
 func TestPOMLocoReadByteWireFormat(t *testing.T) {
@@ -100,7 +119,7 @@ func TestPOMAccessoryWriteBitWireFormat(t *testing.T) {
 	output := uint8(1)
 	msg := POMAccessoryWriteBit(10, CVAddressFromNumber(29), 3, true, &output)
 	require.Equal(t, byte(0xE8), msg.Data[4]&0xFC)
-	require.Equal(t, byte(0x23), msg.Data[6]) // bit 3 + value
+	require.Equal(t, byte(0x0B), msg.Data[6]) // 0000VPPP: V=1, PPP=3
 }
 
 func TestPOMAccessoryReadByteWireFormat(t *testing.T) {

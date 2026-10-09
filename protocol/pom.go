@@ -88,10 +88,11 @@ func POMAccessoryReadByte(decoderAddress uint16, cv CVAddress, output *uint8) Me
 	}
 }
 
+// encodePOMBitParam returns the 0000VPPP byte of the POM write-bit commands (spec §6.7 / §6.10).
 func encodePOMBitParam(bitPos uint8, on bool) byte {
-	b := bitPos & 0x1F
+	b := bitPos & 0x07
 	if on {
-		b |= 0x20
+		b |= 0x08
 	}
 	return b
 }
