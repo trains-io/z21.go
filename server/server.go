@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"sync"
 	"time"
 
 	"github.com/trains-io/z21.go/protocol"
@@ -28,6 +29,9 @@ type Server struct {
 	conn    *net.UDPConn
 	handler Handler
 	log     *slog.Logger
+
+	mu       sync.Mutex
+	sessions map[netip.AddrPort]*session
 }
 
 // New binds a UDP socket on addr (for example ":21105" or "127.0.0.1:0").
@@ -42,7 +46,7 @@ func New(addr string, opts ...Option) (*Server, error) {
 		return nil, fmt.Errorf("z21: listen %q: %w", addr, err)
 	}
 
-	s := &Server{conn: conn}
+	s := &Server{conn: conn, sessions: make(map[netip.AddrPort]*session)}
 	applyOptions(s, opts)
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
@@ -81,22 +85,26 @@ func (s *Server) Serve(ctx context.Context) error {
 			return fmt.Errorf("z21: read: %w", err)
 		}
 		remote = netip.AddrPortFrom(remote.Addr().Unmap(), remote.Port())
-		s.handlePacket(Client{Addr: remote}, buf[:n])
+		s.handlePacket(remote, buf[:n])
 	}
 }
 
-func (s *Server) handlePacket(c Client, payload []byte) {
+// handlePacket handles the datasets of one packet in order. Session requests
+// (broadcast flags, logoff) are handled by the server; all others go to the
+// handler.
+func (s *Server) handlePacket(from netip.AddrPort, payload []byte) {
 	msgs, err := protocol.ParseAll(payload)
 	if err != nil {
-		s.log.Debug("z21 ignore malformed packet", "from", c.Addr, "err", err)
-		return
-	}
-	if s.handler == nil {
+		s.log.Debug("z21 ignore malformed packet", "from", from, "err", err)
 		return
 	}
 
-	w := &responseWriter{}
+	w := &responseWriter{srv: s, sender: from}
 	for _, msg := range msgs {
+		c := s.clientFor(from)
+		if s.handleSession(w, c, msg) || s.handler == nil {
+			continue
+		}
 		s.handler.ServeZ21(w, &Request{Message: msg, Client: c})
 	}
 	if len(w.replies) == 0 {
@@ -105,10 +113,16 @@ func (s *Server) handlePacket(c Client, payload []byte) {
 
 	out, err := protocol.MarshalAll(w.replies...)
 	if err != nil {
-		s.log.Error("z21 marshal reply", "to", c.Addr, "err", err)
+		s.log.Error("z21 marshal reply", "to", from, "err", err)
 		return
 	}
-	if _, err := s.conn.WriteToUDPAddrPort(out, c.Addr); err != nil {
-		s.log.Error("z21 write reply", "to", c.Addr, "err", err)
+	s.write(from, out)
+}
+
+func (s *Server) write(to netip.AddrPort, out []byte) bool {
+	if _, err := s.conn.WriteToUDPAddrPort(out, to); err != nil {
+		s.log.Error("z21 write", "to", to, "err", err)
+		return false
 	}
+	return true
 }

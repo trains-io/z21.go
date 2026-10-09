@@ -26,23 +26,35 @@ type Request struct {
 	Client  Client
 }
 
-// Client identifies the sender of a request.
+// Client describes the sender of a request as seen when the request arrived.
 type Client struct {
-	Addr netip.AddrPort
+	Addr           netip.AddrPort
+	BroadcastFlags uint32 // set by LAN_SET_BROADCASTFLAGS (spec §2.16)
 }
 
-// ResponseWriter collects the replies to a request.
-//
-// Replies to all datasets of one incoming UDP packet are sent back to the client
-// together in a single packet after the last dataset has been handled.
+// ResponseWriter sends replies and broadcasts for a request.
 type ResponseWriter interface {
+	// Reply queues msgs for the sender. Replies to all datasets of one incoming
+	// UDP packet go back together in a single packet after the last dataset
+	// has been handled.
 	Reply(msgs ...protocol.Message)
+
+	// Broadcast immediately sends msgs to every other client subscribed to any
+	// bit of flag (protocol.BroadcastFlag*). The sender is excluded; reply to it
+	// with Reply.
+	Broadcast(flag uint32, msgs ...protocol.Message)
 }
 
 type responseWriter struct {
+	srv     *Server
+	sender  netip.AddrPort
 	replies []protocol.Message
 }
 
 func (w *responseWriter) Reply(msgs ...protocol.Message) {
 	w.replies = append(w.replies, msgs...)
+}
+
+func (w *responseWriter) Broadcast(flag uint32, msgs ...protocol.Message) {
+	w.srv.broadcast(flag, w.sender, msgs)
 }
