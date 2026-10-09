@@ -21,6 +21,21 @@ func SetLocoMode(address uint16, mode byte) Message {
 	}
 }
 
+// ParseGetLocoMode decodes the address from a LAN_GET_LOCOMODE request (spec §3.1).
+func ParseGetLocoMode(data []byte) (address uint16, err error) {
+	return parseAddressModeGet(data, "LAN_GET_LOCOMODE")
+}
+
+// ParseSetLocoMode decodes a LAN_SET_LOCOMODE request (spec §3.2).
+func ParseSetLocoMode(data []byte) (AddressMode, error) {
+	return parseAddressModeSet(data, "LAN_SET_LOCOMODE")
+}
+
+// EncodeLocoMode builds the LAN_GET_LOCOMODE reply (spec §3.1).
+func EncodeLocoMode(m AddressMode) Message {
+	return encodeAddressMode(HeaderLANGetLocoMode, m)
+}
+
 // LocoModeFromMessages extracts a LAN_GET_LOCOMODE reply.
 func LocoModeFromMessages(msgs []Message) (AddressMode, error) {
 	for _, msg := range msgs {

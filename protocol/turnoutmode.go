@@ -21,6 +21,21 @@ func SetTurnoutMode(address uint16, mode byte) Message {
 	}
 }
 
+// ParseGetTurnoutMode decodes the address from a LAN_GET_TURNOUTMODE request (spec §3.3).
+func ParseGetTurnoutMode(data []byte) (address uint16, err error) {
+	return parseAddressModeGet(data, "LAN_GET_TURNOUTMODE")
+}
+
+// ParseSetTurnoutMode decodes a LAN_SET_TURNOUTMODE request (spec §3.4).
+func ParseSetTurnoutMode(data []byte) (AddressMode, error) {
+	return parseAddressModeSet(data, "LAN_SET_TURNOUTMODE")
+}
+
+// EncodeTurnoutMode builds the LAN_GET_TURNOUTMODE reply (spec §3.3).
+func EncodeTurnoutMode(m AddressMode) Message {
+	return encodeAddressMode(HeaderLANGetTurnoutMode, m)
+}
+
 // TurnoutModeFromMessages extracts a LAN_GET_TURNOUTMODE reply.
 func TurnoutModeFromMessages(msgs []Message) (AddressMode, error) {
 	for _, msg := range msgs {

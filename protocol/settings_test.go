@@ -95,3 +95,56 @@ func TestMessageNameSettings(t *testing.T) {
 		require.Equal(t, tt.want, MessageName(tt.msg))
 	}
 }
+
+func TestEncodeAddressModeWire(t *testing.T) {
+	loco, err := EncodeLocoMode(AddressMode{Address: 3, Mode: OutputModeMM}).Marshal()
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x07, 0x00, 0x60, 0x00, 0x00, 0x03, 0x01}, loco)
+
+	turnout, err := EncodeTurnoutMode(AddressMode{Address: 0x0123, Mode: OutputModeDCC}).Marshal()
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x07, 0x00, 0x70, 0x00, 0x01, 0x23, 0x00}, turnout)
+}
+
+func TestEncodeAddressModeRoundTrip(t *testing.T) {
+	for _, addr := range []uint16{0, 3, 255, 256, 10239} {
+		for _, mode := range []byte{OutputModeDCC, OutputModeMM} {
+			in := AddressMode{Address: addr, Mode: mode}
+
+			got, err := LocoModeFromMessages([]Message{EncodeLocoMode(in)})
+			require.NoError(t, err)
+			require.Equal(t, in, got)
+
+			got, err = TurnoutModeFromMessages([]Message{EncodeTurnoutMode(in)})
+			require.NoError(t, err)
+			require.Equal(t, in, got)
+		}
+	}
+}
+
+func TestParseAddressModeRequests(t *testing.T) {
+	for _, addr := range []uint16{0, 3, 255, 256, 10239} {
+		got, err := ParseGetLocoMode(GetLocoMode(addr).Data)
+		require.NoError(t, err)
+		require.Equal(t, addr, got)
+
+		got, err = ParseGetTurnoutMode(GetTurnoutMode(addr).Data)
+		require.NoError(t, err)
+		require.Equal(t, addr, got)
+
+		for _, mode := range []byte{OutputModeDCC, OutputModeMM} {
+			m, err := ParseSetLocoMode(SetLocoMode(addr, mode).Data)
+			require.NoError(t, err)
+			require.Equal(t, AddressMode{Address: addr, Mode: mode}, m)
+
+			m, err = ParseSetTurnoutMode(SetTurnoutMode(addr, mode).Data)
+			require.NoError(t, err)
+			require.Equal(t, AddressMode{Address: addr, Mode: mode}, m)
+		}
+	}
+
+	_, err := ParseGetLocoMode([]byte{0x00})
+	require.ErrorContains(t, err, "LAN_GET_LOCOMODE too short")
+	_, err = ParseSetTurnoutMode([]byte{0x00, 0x03})
+	require.ErrorContains(t, err, "LAN_SET_TURNOUTMODE too short")
+}

@@ -31,6 +31,27 @@ func parseAddressModeReply(data []byte) (AddressMode, error) {
 	}, nil
 }
 
+func encodeAddressMode(header uint16, m AddressMode) Message {
+	return Message{Header: header, Data: append(encodeAddressBE(m.Address), m.Mode)}
+}
+
+func parseAddressModeGet(data []byte, name string) (uint16, error) {
+	if len(data) < 2 {
+		return 0, fmt.Errorf("z21: %s too short (%d bytes)", name, len(data))
+	}
+	return binary.BigEndian.Uint16(data[0:2]), nil
+}
+
+func parseAddressModeSet(data []byte, name string) (AddressMode, error) {
+	if len(data) < 3 {
+		return AddressMode{}, fmt.Errorf("z21: %s too short (%d bytes)", name, len(data))
+	}
+	return AddressMode{
+		Address: binary.BigEndian.Uint16(data[0:2]),
+		Mode:    data[2],
+	}, nil
+}
+
 // FormatOutputMode renders a DCC/MM mode byte (spec §3).
 func FormatOutputMode(mode byte) string {
 	switch mode {
