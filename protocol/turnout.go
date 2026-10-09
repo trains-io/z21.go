@@ -109,6 +109,67 @@ func SetExtAccessory(address uint16, value byte) Message {
 	}
 }
 
+// ParseGetTurnoutInfo decodes the address from LAN_X_GET_TURNOUT_INFO (spec §5.1).
+func ParseGetTurnoutInfo(data []byte) (address uint16, err error) {
+	d, err := parseLANXData(data, xHeaderGetTurnoutInfo, 2, "LAN_X_GET_TURNOUT_INFO")
+	if err != nil {
+		return 0, err
+	}
+	return parseFunctionAddressBytes(d[0:2])
+}
+
+// ParseSetTurnout decodes LAN_X_SET_TURNOUT (spec §5.2).
+// Like the ZIMO reference server, only the Q, A and P bits of the command byte are read.
+func ParseSetTurnout(data []byte) (address uint16, sw TurnoutSwitch, err error) {
+	d, err := parseLANXData(data, xHeaderSetTurnout, 3, "LAN_X_SET_TURNOUT")
+	if err != nil {
+		return 0, TurnoutSwitch{}, err
+	}
+	address, err = parseFunctionAddressBytes(d[0:2])
+	if err != nil {
+		return 0, TurnoutSwitch{}, err
+	}
+	return address, TurnoutSwitch{
+		Activate: d[2]&0x08 != 0,
+		Output2:  d[2]&0x01 != 0,
+		Queue:    d[2]&0x20 != 0,
+	}, nil
+}
+
+// ParseGetExtAccessoryInfo decodes the address from LAN_X_GET_EXT_ACCESSORY_INFO (spec §5.5).
+func ParseGetExtAccessoryInfo(data []byte) (address uint16, err error) {
+	d, err := parseLANXData(data, xHeaderGetExtAccessory, 3, "LAN_X_GET_EXT_ACCESSORY_INFO")
+	if err != nil {
+		return 0, err
+	}
+	return parseFunctionAddressBytes(d[0:2])
+}
+
+// ParseSetExtAccessory decodes LAN_X_SET_EXT_ACCESSORY (spec §5.4).
+func ParseSetExtAccessory(data []byte) (address uint16, value byte, err error) {
+	d, err := parseLANXData(data, xHeaderSetExtAccessory, 4, "LAN_X_SET_EXT_ACCESSORY")
+	if err != nil {
+		return 0, 0, err
+	}
+	address, err = parseFunctionAddressBytes(d[0:2])
+	if err != nil {
+		return 0, 0, err
+	}
+	return address, d[2], nil
+}
+
+// EncodeTurnoutInfo builds LAN_X_TURNOUT_INFO (spec §5.3).
+func EncodeTurnoutInfo(info TurnoutInfo) Message {
+	addr := encodeFunctionAddressBytes(info.Address)
+	return EncodeLANX(xHeaderGetTurnoutInfo, addr[0], addr[1], byte(info.Position)&0x03)
+}
+
+// EncodeExtAccessoryInfo builds LAN_X_EXT_ACCESSORY_INFO (spec §5.6).
+func EncodeExtAccessoryInfo(info ExtAccessoryInfo) Message {
+	addr := encodeFunctionAddressBytes(info.Address)
+	return EncodeLANX(xHeaderGetExtAccessory, addr[0], addr[1], info.Value, info.Status)
+}
+
 // TurnoutInfoFromMessages extracts LAN_X_TURNOUT_INFO.
 func TurnoutInfoFromMessages(msgs []Message) (TurnoutInfo, error) {
 	for _, msg := range msgs {
