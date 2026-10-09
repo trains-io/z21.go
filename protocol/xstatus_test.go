@@ -48,3 +48,31 @@ func TestXStatusFromMessages(t *testing.T) {
 		t.Fatalf("FormatXStatusFlags() = %q, want track voltage off", got)
 	}
 }
+
+func TestEncodeXStatus(t *testing.T) {
+	msg := EncodeXStatus(XStatus{CentralState: xStatusTrackVoltageOff})
+	if msg.Header != HeaderLANX {
+		t.Fatalf("Header = %#x, want %#x", msg.Header, HeaderLANX)
+	}
+	want := []byte{0x62, 0x22, 0x02, 0x42}
+	if string(msg.Data) != string(want) {
+		t.Fatalf("EncodeXStatus(track voltage off).Data = % x, want % x", msg.Data, want)
+	}
+	if !IsXStatusChanged(msg.Data) {
+		t.Fatalf("IsXStatusChanged(% x) = false, want true", msg.Data)
+	}
+}
+
+func TestEncodeXStatusRoundTrip(t *testing.T) {
+	states := []byte{0x00, xStatusEmergencyStop, xStatusShortCircuit | xStatusTrackVoltageOff, xStatusProgrammingMode, 0xff}
+	for _, state := range states {
+		in := XStatus{CentralState: state}
+		got, err := XStatusFromMessages([]Message{EncodeXStatus(in)})
+		if err != nil {
+			t.Fatalf("XStatusFromMessages(EncodeXStatus(%#02x)) error = %v", state, err)
+		}
+		if got != in {
+			t.Fatalf("XStatusFromMessages(EncodeXStatus(%#02x)) = %+v", state, got)
+		}
+	}
+}

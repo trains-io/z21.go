@@ -25,6 +25,11 @@ func GetXFirmware() Message {
 	}
 }
 
+// EncodeXFirmware builds the LAN_X_GET_FIRMWARE_VERSION reply (spec §2.15).
+func EncodeXFirmware(fw XFirmware) Message {
+	return EncodeLANX(xHeaderFirmwareReply, xFirmwareDB0, fw.VersionMSB, fw.VersionLSB)
+}
+
 // XFirmwareFromMessages extracts firmware version from a Call reply.
 func XFirmwareFromMessages(msgs []Message) (XFirmware, error) {
 	for _, msg := range msgs {

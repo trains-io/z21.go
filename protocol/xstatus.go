@@ -28,6 +28,11 @@ func GetXStatus() Message {
 	}
 }
 
+// EncodeXStatus builds LAN_X_STATUS_CHANGED, the reply to LAN_X_GET_STATUS (spec §2.12).
+func EncodeXStatus(s XStatus) Message {
+	return EncodeLANX(xHeaderStatusReply, xStatusDB0, s.CentralState)
+}
+
 // XStatusFromMessages extracts central state from a Call reply.
 func XStatusFromMessages(msgs []Message) (XStatus, error) {
 	for _, msg := range msgs {

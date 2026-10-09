@@ -40,3 +40,26 @@ func TestXVersionFromMessages(t *testing.T) {
 		t.Fatalf("FormatXBusVersion() = %q, want 3.6", got)
 	}
 }
+
+func TestEncodeXVersion(t *testing.T) {
+	msg := EncodeXVersion(XVersion{XBusVersion: 0x30, CommandStationID: commandStationIDZ21})
+	if msg.Header != HeaderLANX {
+		t.Fatalf("Header = %#x, want %#x", msg.Header, HeaderLANX)
+	}
+	want := []byte{0x63, 0x21, 0x30, 0x12, 0x60}
+	if string(msg.Data) != string(want) {
+		t.Fatalf("EncodeXVersion(3.0, Z21).Data = % x, want % x", msg.Data, want)
+	}
+}
+
+func TestEncodeXVersionRoundTrip(t *testing.T) {
+	for _, in := range []XVersion{{}, {XBusVersion: 0x36, CommandStationID: 0x12}, {XBusVersion: 0xff, CommandStationID: 0xff}} {
+		got, err := XVersionFromMessages([]Message{EncodeXVersion(in)})
+		if err != nil {
+			t.Fatalf("XVersionFromMessages(EncodeXVersion(%+v)) error = %v", in, err)
+		}
+		if got != in {
+			t.Fatalf("XVersionFromMessages(EncodeXVersion(%+v)) = %+v", in, got)
+		}
+	}
+}

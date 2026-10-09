@@ -27,6 +27,11 @@ func GetXVersion() Message {
 	}
 }
 
+// EncodeXVersion builds the LAN_X_GET_VERSION reply (spec §2.3).
+func EncodeXVersion(v XVersion) Message {
+	return EncodeLANX(xHeaderGetVersionReply, xHeaderGetVersion, v.XBusVersion, v.CommandStationID)
+}
+
 // XVersionFromMessages extracts X-Bus version info from a Call reply.
 func XVersionFromMessages(msgs []Message) (XVersion, error) {
 	for _, msg := range msgs {

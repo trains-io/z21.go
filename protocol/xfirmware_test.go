@@ -37,3 +37,29 @@ func TestXFirmwareFromMessages(t *testing.T) {
 		t.Fatalf("FormatXFirmwareVersion() = %q, want 1.20", got)
 	}
 }
+
+func TestEncodeXFirmware(t *testing.T) {
+	msg := EncodeXFirmware(XFirmware{VersionMSB: 0x01, VersionLSB: 0x23})
+	if msg.Header != HeaderLANX {
+		t.Fatalf("Header = %#x, want %#x", msg.Header, HeaderLANX)
+	}
+	want := []byte{0xF3, 0x0A, 0x01, 0x23, 0xDB}
+	if string(msg.Data) != string(want) {
+		t.Fatalf("EncodeXFirmware(1.23).Data = % x, want % x", msg.Data, want)
+	}
+	if got := FormatXFirmwareVersion(XFirmware{VersionMSB: 0x01, VersionLSB: 0x23}); got != "1.23" {
+		t.Fatalf("FormatXFirmwareVersion(1.23) = %q", got)
+	}
+}
+
+func TestEncodeXFirmwareRoundTrip(t *testing.T) {
+	for _, in := range []XFirmware{{}, {VersionMSB: 0x01, VersionLSB: 0x43}, {VersionMSB: 0xff, VersionLSB: 0xff}} {
+		got, err := XFirmwareFromMessages([]Message{EncodeXFirmware(in)})
+		if err != nil {
+			t.Fatalf("XFirmwareFromMessages(EncodeXFirmware(%+v)) error = %v", in, err)
+		}
+		if got != in {
+			t.Fatalf("XFirmwareFromMessages(EncodeXFirmware(%+v)) = %+v", in, got)
+		}
+	}
+}
