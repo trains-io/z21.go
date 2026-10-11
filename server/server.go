@@ -122,17 +122,24 @@ func (s *Server) handlePacket(from netip.AddrPort, payload []byte) {
 		}
 		s.serveZ21(w, &Request{Message: msg, Client: c})
 	}
-	if len(w.replies) == 0 {
-		return
-	}
 
-	out, err := protocol.MarshalAll(w.replies...)
-	if err != nil {
-		s.log.Error("z21 marshal reply", "to", from, "err", err)
+	s.sendReply(from, w.replies)
+	for _, b := range w.broadcasts {
+		s.send(b.flag, b.to, b.msgs)
+	}
+}
+
+func (s *Server) sendReply(to netip.AddrPort, replies []protocol.Message) {
+	if len(replies) == 0 {
 		return
 	}
-	s.observe(Packet{Direction: DirectionTX, Remote: from, Raw: out, Messages: w.replies})
-	s.write(from, out)
+	out, err := protocol.MarshalAll(replies...)
+	if err != nil {
+		s.log.Error("z21 marshal reply", "to", to, "err", err)
+		return
+	}
+	s.observe(Packet{Direction: DirectionTX, Remote: to, Raw: out, Messages: replies})
+	s.write(to, out)
 }
 
 // serveZ21 calls the handler and recovers from a panic, so a faulty handler

@@ -152,11 +152,14 @@ func (s *Server) Broadcast(flag uint32, msgs ...protocol.Message) int {
 // goroutine.
 func (s *Server) BroadcastLocoInfo(info protocol.LocoInfo) int {
 	return s.send(
-		protocol.BroadcastFlagXpressNet|protocol.BroadcastFlagAllLocoInfo,
+		locoInfoFlags,
 		s.recipients(netip.AddrPort{}, locoInfoMatch(info.Address)),
 		[]protocol.Message{protocol.EncodeLocoInfo(info)},
 	)
 }
+
+// locoInfoFlags are the broadcast flags reported to observers for loco info.
+const locoInfoFlags = protocol.BroadcastFlagXpressNet | protocol.BroadcastFlagAllLocoInfo
 
 // send writes msgs as one packet to each address in to and returns the number
 // of successful writes. flag is only reported to the observer.

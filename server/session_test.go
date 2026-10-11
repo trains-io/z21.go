@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -217,6 +218,48 @@ func TestResponseWriterBroadcastLocoInfoIncludesSender(t *testing.T) {
 		if info.Address != 3 || info.Speed != 42 || !info.Forward {
 			t.Fatalf("%s got %+v, want loco 3 forward at speed 42", name, info)
 		}
+	}
+}
+
+func TestHandlerBroadcastsAreSentAfterReply(t *testing.T) {
+	obs := &recordingObserver{}
+	srv := startServer(t, server.WithObserver(obs), server.WithHandler(server.HandlerFunc(func(w server.ResponseWriter, r *server.Request) {
+		d, err := protocol.ParseSetLocoDrive(r.Message.Data)
+		if err != nil {
+			return
+		}
+		// Broadcast before replying on purpose: the reply must still go first.
+		w.Broadcast(protocol.BroadcastFlagSystemState, protocol.EncodeSystemState(protocol.SystemState{}))
+		w.BroadcastLocoInfo(protocol.LocoInfo{Address: d.Address, SpeedSteps: 4, Speed: d.Speed})
+		w.Reply(protocol.EncodeCode(protocol.CodeNoLock))
+	})))
+	sender, other := dial(t, srv), dial(t, srv)
+	subscribe(t, sender, protocol.BroadcastFlagXpressNet)
+	subscribe(t, other, protocol.BroadcastFlagSystemState)
+	if err := sender.Send(testContext(t), protocol.GetLocoInfo(3)); err != nil { // subscribe to loco 3
+		t.Fatalf("Send GetLocoInfo: %v", err)
+	}
+
+	if err := sender.Send(testContext(t), protocol.SetLocoDrive(3, protocol.LocoSpeedSteps128, true, 42)); err != nil {
+		t.Fatalf("Send SetLocoDrive: %v", err)
+	}
+	expectPacket(t, sender, protocol.HeaderLANGetCode) // the reply first
+	expectPacket(t, sender, protocol.HeaderLANX)       // then the loco info broadcast
+	expectPacket(t, other, protocol.HeaderLANSystemStateDataChanged)
+
+	obs.mu.Lock()
+	defer obs.mu.Unlock()
+	var order []string
+	for _, p := range obs.packets {
+		switch {
+		case p.Direction == server.DirectionTX && !p.Broadcast && p.Messages[0].Header == protocol.HeaderLANGetCode:
+			order = append(order, "reply")
+		case p.Broadcast:
+			order = append(order, "broadcast")
+		}
+	}
+	if want := []string{"reply", "broadcast", "broadcast"}; !slices.Equal(order, want) {
+		t.Fatalf("send order = %v, want %v", order, want)
 	}
 }
 
