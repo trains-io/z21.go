@@ -1,15 +1,15 @@
 ## z21 - Go library for client and server
 
-A [Go](https://go.dev/) client for [z21](https://www.z21.eu/en) command station.
+A [Go](https://go.dev/) library for the [z21](https://www.z21.eu/en) LAN protocol: talk to a command station as a client, or implement one as a server.
 
 ### Installation
 
 ```bash
-# To get the latest released Go client:
+# To get the latest release:
 go get github.com/trains-io/z21.go@latest
 
 # To get a specific version:
-go get github.com/trains-io/z21.go@v0.1.0
+go get github.com/trains-io/z21.go@v0.3.0
 ```
 
 ### Basic Usage
