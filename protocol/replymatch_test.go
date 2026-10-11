@@ -76,6 +76,29 @@ func TestReplyMatchesRequestSystemState(t *testing.T) {
 	}
 }
 
+func TestReplyMatchesRequestByAddress(t *testing.T) {
+	tests := []struct {
+		name  string
+		req   Message
+		reply Message
+		want  bool
+	}{
+		{name: "loco info same address", req: GetLocoInfo(3), reply: EncodeLocoInfo(LocoInfo{Address: 3}), want: true},
+		{name: "loco info other address", req: GetLocoInfo(3), reply: EncodeLocoInfo(LocoInfo{Address: 4})},
+		{name: "purge loco is not a loco info request", req: PurgeLoco(3), reply: EncodeLocoInfo(LocoInfo{Address: 3})},
+		{name: "turnout info same address", req: GetTurnoutInfo(7), reply: EncodeTurnoutInfo(TurnoutInfo{Address: 7}), want: true},
+		{name: "turnout info other address", req: GetTurnoutInfo(7), reply: EncodeTurnoutInfo(TurnoutInfo{Address: 8})},
+		{name: "loco info does not answer turnout request", req: GetTurnoutInfo(3), reply: EncodeLocoInfo(LocoInfo{Address: 3})},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ReplyMatchesRequest(tt.req, tt.reply); got != tt.want {
+				t.Fatalf("ReplyMatchesRequest(%#x, %#x) = %v, want %v", tt.req.Data, tt.reply.Data, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMatchedRepliesFiltersBroadcasts(t *testing.T) {
 	reqs := []Message{GetSerialNumber(), GetHWInfo()}
 	replies := []Message{

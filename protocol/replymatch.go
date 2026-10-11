@@ -99,6 +99,20 @@ func lanXReplyMatchesRequest(reqData, replyData []byte) bool {
 		return len(replyData) >= 2 &&
 			replyData[0] == xHeaderFirmwareReply &&
 			replyData[1] == xFirmwareDB0
+	case xHeaderGetLocoInfo:
+		addr, err := ParseGetLocoInfo(reqData)
+		if err != nil {
+			return false
+		}
+		info, err := ParseLocoInfo(replyData)
+		return err == nil && info.Address == addr
+	case xHeaderGetTurnoutInfo:
+		addr, err := ParseGetTurnoutInfo(reqData)
+		if err != nil {
+			return false
+		}
+		info, err := ParseTurnoutInfo(replyData)
+		return err == nil && info.Address == addr
 	default:
 		return false
 	}

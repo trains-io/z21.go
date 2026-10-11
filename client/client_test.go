@@ -4,6 +4,7 @@ package client_test
 
 import (
 	"context"
+	"errors"
 	"net"
 	"sync"
 	"testing"
@@ -216,32 +217,127 @@ func TestReadPacketContextCancel(t *testing.T) {
 	c := dialStation(t, startStation(t, nil))
 
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		_, err := c.ReadPacket(ctx)
-		done <- err
-	}()
+	defer cancel()
+	time.AfterFunc(50*time.Millisecond, cancel)
 
-	time.Sleep(50 * time.Millisecond)
-	cancel()
+	start := time.Now()
+	_, err := c.ReadPacket(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("ReadPacket() error = %v, want context.Canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("ReadPacket returned %v after cancel, want promptly", elapsed)
+	}
+}
 
-	select {
-	case err := <-done:
-		if err != context.Canceled {
-			t.Fatalf("ReadPacket() error = %v, want context.Canceled", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("ReadPacket did not return after context cancel")
+// silentPeer returns the address of a UDP socket that never replies.
+func silentPeer(t *testing.T) string {
+	t.Helper()
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	if err != nil {
+		t.Fatalf("ListenUDP: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	return conn.LocalAddr().String()
+}
+
+func dialAddr(t *testing.T, addr string, opts ...client.Option) *client.Client {
+	t.Helper()
+	c, err := client.Dial(addr, opts...)
+	if err != nil {
+		t.Fatalf("Dial(%q): %v", addr, err)
+	}
+	t.Cleanup(func() { c.Close() })
+	return c
+}
+
+func TestCallWithoutDeadlineUsesCallTimeout(t *testing.T) {
+	tests := []struct {
+		name string
+		reqs []protocol.Message
+	}{
+		{name: "single request", reqs: []protocol.Message{protocol.GetHWInfo()}},
+		{name: "several requests", reqs: deviceInfoRequests},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := dialAddr(t, silentPeer(t), client.WithCallTimeout(200*time.Millisecond))
+
+			start := time.Now()
+			_, err := c.Call(context.Background(), tt.reqs...)
+			if !errors.Is(err, client.ErrIncomplete) || !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("Call() error = %v, want ErrIncomplete and context.DeadlineExceeded", err)
+			}
+			if elapsed := time.Since(start); elapsed > 2*time.Second {
+				t.Fatalf("Call returned after %v, want about 200ms", elapsed)
+			}
+		})
+	}
+}
+
+func TestCallContextDeadline(t *testing.T) {
+	c := dialAddr(t, silentPeer(t))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	msgs, err := c.Call(ctx, protocol.GetHWInfo())
+	if !errors.Is(err, client.ErrIncomplete) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Call() error = %v, want ErrIncomplete and context.DeadlineExceeded", err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("Call() replies = %#v, want none", msgs)
+	}
+}
+
+func TestCallContextCancel(t *testing.T) {
+	c := dialAddr(t, silentPeer(t))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(50*time.Millisecond, cancel)
+
+	start := time.Now()
+	_, err := c.Call(ctx, protocol.GetHWInfo())
+	if !errors.Is(err, client.ErrIncomplete) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("Call() error = %v, want ErrIncomplete and context.Canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("Call returned %v after cancel, want promptly", elapsed)
+	}
+}
+
+func TestCallSkipsBroadcastBeforeReply(t *testing.T) {
+	broadcast := protocol.Message{Header: protocol.HeaderLANSystemStateDataChanged, Data: make([]byte, 16)}
+	c := dialAddr(t, replyStub(t, 1, []protocol.Message{broadcast, protocol.EncodeHWInfo(testHWInfo)}))
+
+	msgs, err := c.Call(t.Context(), protocol.GetHWInfo())
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	info, err := protocol.HWInfoFromMessages(msgs)
+	if err != nil {
+		t.Fatalf("HWInfoFromMessages(%#v) error = %v", msgs, err)
+	}
+	if info != testHWInfo {
+		t.Fatalf("HWInfo = %+v, want %+v", info, testHWInfo)
+	}
+}
+
+func TestCallPartialReplies(t *testing.T) {
+	c := dialAddr(t, replyStub(t, 5, deviceInfoReplies[:2]))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+	msgs, err := c.Call(ctx, deviceInfoRequests...)
+	if !errors.Is(err, client.ErrIncomplete) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Call() error = %v, want ErrIncomplete and context.DeadlineExceeded", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("Call() replies = %d, want the 2 received", len(msgs))
 	}
 }
 
 func TestDialDefaultPort(t *testing.T) {
-	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: client.DefaultPort})
-	if err != nil {
-		t.Fatalf("ListenUDP: %v", err)
-	}
-	defer conn.Close()
-
 	c, err := client.Dial("127.0.0.1")
 	if err != nil {
 		t.Fatalf("Dial: %v", err)

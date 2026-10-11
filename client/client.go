@@ -7,26 +7,46 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/trains-io/z21.go/protocol"
 )
 
 const (
-	DefaultPort     = 21105
+	// DefaultPort is the Z21 LAN UDP port (spec §1.1).
+	DefaultPort = 21105
+	// MaintenancePort is the second UDP port a Z21 answers on (spec §1.1).
 	MaintenancePort = 21106
 )
 
-// readPollInterval bounds how long ReadPacket blocks when ctx has no deadline.
+// defaultCallTimeout bounds Call when its context has no deadline.
+const defaultCallTimeout = 5 * time.Second
+
+// readPollInterval bounds how long a single socket read blocks, so that
+// ReadPacket notices context cancellation promptly.
 const readPollInterval = 200 * time.Millisecond
 
+// maxDatagramSize is the largest UDP payload that fits an Ethernet frame
+// without IP fragmentation.
+const maxDatagramSize = 1472
+
+// ErrIncomplete reports that Call stopped waiting before every request was
+// answered. It is returned together with the replies received so far and the
+// context error that ended the wait.
+var ErrIncomplete = errors.New("z21: not all requests answered")
+
 // Client talks to a Z21 command station (or compatible test server) over UDP.
+//
+// A Client is not safe for concurrent use: Send, Call, ReadPacket, Collect and
+// the setters share one socket and its deadlines.
 type Client struct {
-	conn     *net.UDPConn
-	addr     *net.UDPAddr
-	observer Observer
-	log      *slog.Logger
-	prepend  []protocol.Message
+	conn        *net.UDPConn
+	addr        *net.UDPAddr
+	observer    Observer
+	log         *slog.Logger
+	prepend     []protocol.Message
+	callTimeout time.Duration
 }
 
 // Dial connects to host or host:port (default port 21105 if omitted).
@@ -38,12 +58,12 @@ func Dial(hostPort string, opts ...Option) (*Client, error) {
 func DialLocal(hostPort string, localPort int, opts ...Option) (*Client, error) {
 	hostPort, err := ensureUDPPort(hostPort, DefaultPort)
 	if err != nil {
-		return nil, fmt.Errorf("z21 client: resolve address: %w", err)
+		return nil, fmt.Errorf("z21: resolve address: %w", err)
 	}
 
 	raddr, err := net.ResolveUDPAddr("udp", hostPort)
 	if err != nil {
-		return nil, fmt.Errorf("z21 client: resolve address: %w", err)
+		return nil, fmt.Errorf("z21: resolve address: %w", err)
 	}
 
 	var laddr *net.UDPAddr
@@ -53,10 +73,10 @@ func DialLocal(hostPort string, localPort int, opts ...Option) (*Client, error) 
 
 	conn, err := net.DialUDP("udp", laddr, raddr)
 	if err != nil {
-		return nil, fmt.Errorf("z21 client: dial: %w", err)
+		return nil, fmt.Errorf("z21: dial: %w", err)
 	}
 
-	c := &Client{conn: conn, addr: raddr}
+	c := &Client{conn: conn, addr: raddr, callTimeout: defaultCallTimeout}
 	applyOptions(c, opts)
 	return c, nil
 }
@@ -101,12 +121,50 @@ func (c *Client) Send(ctx context.Context, req protocol.Message) error {
 // SendMany transmits reqs in one UDP datagram without waiting for a reply.
 func (c *Client) SendMany(ctx context.Context, reqs ...protocol.Message) error {
 	if c == nil || c.conn == nil {
-		return fmt.Errorf("z21 client: not connected")
+		return errors.New("z21: not connected")
 	}
 	if len(reqs) == 0 {
-		return fmt.Errorf("z21 client: no request")
+		return errors.New("z21: no request")
+	}
+	return c.writeOutbound(ctx, reqs)
+}
+
+// Call sends one or more requests in a single UDP datagram and waits until
+// every request that expects a reply is answered. Replies may arrive in one or
+// several datagrams (spec §1.3); unsolicited datasets such as broadcasts are
+// skipped. The matched replies are returned in request order.
+//
+// If ctx has no deadline, Call gives up after the client's call timeout
+// (5 seconds unless changed with WithCallTimeout). When the wait ends
+// before every request is answered, Call returns the replies received so far
+// and an error that matches both ErrIncomplete and the context error
+// (context.DeadlineExceeded or context.Canceled).
+func (c *Client) Call(ctx context.Context, reqs ...protocol.Message) ([]protocol.Message, error) {
+	if c == nil || c.conn == nil {
+		return nil, errors.New("z21: not connected")
+	}
+	if len(reqs) == 0 {
+		return nil, errors.New("z21: no request")
 	}
 
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.callTimeout)
+		defer cancel()
+	}
+
+	if err := c.writeOutbound(ctx, reqs); err != nil {
+		return nil, err
+	}
+
+	expecting := protocol.RequestsExpectingReplies(reqs)
+	if len(expecting) == 0 {
+		return nil, nil
+	}
+	return c.awaitReplies(ctx, expecting)
+}
+
+func (c *Client) writeOutbound(ctx context.Context, reqs []protocol.Message) error {
 	payload, err := c.marshalOutbound(reqs)
 	if err != nil {
 		return err
@@ -114,72 +172,16 @@ func (c *Client) SendMany(ctx context.Context, reqs ...protocol.Message) error {
 
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := c.conn.SetWriteDeadline(deadline); err != nil {
-			return fmt.Errorf("z21 client: set write deadline: %w", err)
+			return fmt.Errorf("z21: set write deadline: %w", err)
 		}
-		defer c.clearDeadlines()
+		defer func() { _ = c.conn.SetWriteDeadline(time.Time{}) }()
 	}
 
 	if _, err := c.conn.Write(payload); err != nil {
-		c.logDebug("z21 write failed", "addr", c.Addr(), "err", err)
-		return fmt.Errorf("z21 client: write: %w", err)
+		return fmt.Errorf("z21: write: %w", err)
 	}
 	c.observePacket(ctx, DirectionTX, payload, nil)
 	return nil
-}
-
-// Call sends one or more requests in a single UDP datagram and waits for the
-// response(s). A single request expects one UDP datagram (which may contain
-// multiple datasets). Multiple requests are equivalent to separate UDP packets
-// (spec §1.3); replies are collected until each request is matched or the
-// context times out. Unsolicited broadcasts are ignored for completion.
-func (c *Client) Call(ctx context.Context, reqs ...protocol.Message) ([]protocol.Message, error) {
-	if c == nil || c.conn == nil {
-		return nil, fmt.Errorf("z21 client: not connected")
-	}
-	if len(reqs) == 0 {
-		return nil, fmt.Errorf("z21 client: no request")
-	}
-
-	payload, err := c.marshalOutbound(reqs)
-	if err != nil {
-		return nil, err
-	}
-
-	expecting := protocol.RequestsExpectingReplies(reqs)
-
-	if deadline, ok := ctx.Deadline(); ok {
-		if err := c.conn.SetDeadline(deadline); err != nil {
-			return nil, fmt.Errorf("z21 client: set deadline: %w", err)
-		}
-		defer c.clearDeadlines()
-	} else {
-		if err := c.conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
-			return nil, fmt.Errorf("z21 client: set deadline: %w", err)
-		}
-		defer c.clearDeadlines()
-	}
-
-	if _, err := c.conn.Write(payload); err != nil {
-		c.logDebug("z21 write failed", "addr", c.Addr(), "err", err)
-		return nil, fmt.Errorf("z21 client: write: %w", err)
-	}
-	c.observePacket(ctx, DirectionTX, payload, nil)
-
-	if len(expecting) == 0 {
-		return nil, nil
-	}
-
-	if len(expecting) == 1 && len(c.prepend) == 0 {
-		msgs, err := c.readOneDatagram(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return protocol.MatchedReplies(expecting, msgs), nil
-	}
-
-	// ReadPacket manages per-read deadlines; drop the write deadline on the socket.
-	_ = c.conn.SetDeadline(time.Time{})
-	return c.collectResponsesForRequests(ctx, expecting)
 }
 
 func (c *Client) marshalOutbound(reqs []protocol.Message) ([]byte, error) {
@@ -193,72 +195,36 @@ func (c *Client) marshalOutbound(reqs []protocol.Message) ([]byte, error) {
 	return protocol.MarshalAll(outbound...)
 }
 
-func (c *Client) readOneDatagram(ctx context.Context) ([]protocol.Message, error) {
-	buf := make([]byte, 1472)
-	n, err := c.conn.Read(buf)
-	if err != nil {
-		c.logDebug("z21 read failed", "addr", c.Addr(), "err", err)
-		return nil, fmt.Errorf("z21 client: read: %w", err)
-	}
-
-	raw := buf[:n]
-	msgs, err := protocol.ParseAll(raw)
-	if err != nil {
-		c.logDebug("z21 parse failed", "addr", c.Addr(), "err", err)
-		return nil, fmt.Errorf("z21 client: parse: %w", err)
-	}
-	c.observePacket(ctx, DirectionRX, raw, msgs)
-	return msgs, nil
-}
-
-func (c *Client) collectResponsesForRequests(ctx context.Context, reqs []protocol.Message) ([]protocol.Message, error) {
+func (c *Client) awaitReplies(ctx context.Context, reqs []protocol.Message) ([]protocol.Message, error) {
 	var all []protocol.Message
 	for {
-		if protocol.AllRequestsAnswered(reqs, all) {
-			return protocol.MatchedReplies(reqs, all), nil
-		}
-		if err := ctx.Err(); err != nil {
-			if len(all) > 0 {
-				return protocol.MatchedReplies(reqs, all), nil
-			}
-			return nil, err
-		}
-
-		packetCtx, cancel := context.WithTimeout(ctx, readPollInterval)
-		msgs, err := c.ReadPacket(packetCtx)
-		cancel()
-
+		msgs, err := c.ReadPacket(ctx)
 		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				continue
+			matched := protocol.MatchedReplies(reqs, all)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return matched, fmt.Errorf("%w: %w", ErrIncomplete, ctxErr)
 			}
-			if errors.Is(err, context.Canceled) {
-				if len(all) > 0 {
-					return protocol.MatchedReplies(reqs, all), nil
-				}
-				return nil, err
-			}
-			return protocol.MatchedReplies(reqs, all), err
+			return matched, err
 		}
 		all = append(all, msgs...)
-	}
-}
 
-func (c *Client) clearDeadlines() {
-	if c == nil || c.conn == nil {
-		return
+		matched := protocol.MatchedReplies(reqs, all)
+		if len(matched) == len(reqs) {
+			c.logIgnored(all, len(all)-len(matched))
+			return matched, nil
+		}
 	}
-	_ = c.conn.SetDeadline(time.Time{})
 }
 
 // ReadPacket waits for the next UDP datagram and parses its datasets.
-// It returns when ctx is cancelled, even if no datagram arrives.
+// It returns ctx.Err() when ctx is done, even if no datagram arrives.
 func (c *Client) ReadPacket(ctx context.Context) ([]protocol.Message, error) {
 	if c == nil || c.conn == nil {
-		return nil, fmt.Errorf("z21 client: not connected")
+		return nil, errors.New("z21: not connected")
 	}
+	defer func() { _ = c.conn.SetReadDeadline(time.Time{}) }()
 
-	buf := make([]byte, 1472)
+	buf := make([]byte, maxDatagramSize)
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -269,7 +235,7 @@ func (c *Client) ReadPacket(ctx context.Context) ([]protocol.Message, error) {
 			deadline = d
 		}
 		if err := c.conn.SetReadDeadline(deadline); err != nil {
-			return nil, fmt.Errorf("z21 client: set read deadline: %w", err)
+			return nil, fmt.Errorf("z21: set read deadline: %w", err)
 		}
 
 		n, err := c.conn.Read(buf)
@@ -277,16 +243,13 @@ func (c *Client) ReadPacket(ctx context.Context) ([]protocol.Message, error) {
 			if isReadTimeout(err) {
 				continue
 			}
-			c.logDebug("z21 read failed", "addr", c.Addr(), "err", err)
-			return nil, fmt.Errorf("z21 client: read: %w", err)
+			return nil, fmt.Errorf("z21: read: %w", err)
 		}
 
-		_ = c.conn.SetReadDeadline(time.Time{})
 		raw := buf[:n]
 		msgs, err := protocol.ParseAll(raw)
 		if err != nil {
-			c.logDebug("z21 parse failed", "addr", c.Addr(), "err", err)
-			return nil, fmt.Errorf("z21 client: parse: %w", err)
+			return nil, fmt.Errorf("z21: parse: %w", err)
 		}
 		c.observePacket(ctx, DirectionRX, raw, msgs)
 		return msgs, nil
@@ -294,19 +257,17 @@ func (c *Client) ReadPacket(ctx context.Context) ([]protocol.Message, error) {
 }
 
 func (c *Client) observePacket(ctx context.Context, dir Direction, raw []byte, msgs []protocol.Message) {
-	if c == nil || c.observer == nil || len(raw) == 0 {
+	if c.observer == nil || len(raw) == 0 {
 		return
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	c.observer.OnPacket(ctx, dir, c.Addr(), raw, msgs)
 }
 
-func (c *Client) logDebug(msg string, args ...any) {
-	if c != nil && c.log != nil {
-		c.log.Debug(msg, args...)
+func (c *Client) logIgnored(all []protocol.Message, ignored int) {
+	if c.log == nil || ignored == 0 {
+		return
 	}
+	c.log.Debug("ignore unmatched datasets", "addr", c.Addr(), "count", ignored, "received", len(all))
 }
 
 func isReadTimeout(err error) bool {
@@ -314,17 +275,24 @@ func isReadTimeout(err error) bool {
 	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
+// ensureUDPPort appends defaultPort to hostPort unless it already has a port.
+// It accepts host names, IPv4 addresses and IPv6 addresses with or without
+// brackets.
 func ensureUDPPort(hostPort string, defaultPort int) (string, error) {
 	if hostPort == "" {
-		return "", fmt.Errorf("empty address")
+		return "", errors.New("empty address")
 	}
 	_, _, err := net.SplitHostPort(hostPort)
 	if err == nil {
 		return hostPort, nil
 	}
-	var addrErr *net.AddrError
-	if errors.As(err, &addrErr) && addrErr.Err == "missing port in address" {
-		return net.JoinHostPort(hostPort, strconv.Itoa(defaultPort)), nil
+
+	host := hostPort
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	if !strings.Contains(host, ":") || net.ParseIP(host) != nil {
+		return net.JoinHostPort(host, strconv.Itoa(defaultPort)), nil
 	}
 	return "", err
 }

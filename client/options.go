@@ -1,6 +1,9 @@
 package client
 
-import "log/slog"
+import (
+	"log/slog"
+	"time"
+)
 
 // Option configures a Client.
 type Option func(*Client)
@@ -12,11 +15,21 @@ func WithObserver(o Observer) Option {
 	}
 }
 
-// WithLogger attaches a logger for operational messages (errors, timeouts).
-// Debug-level events are suppressed when nil.
+// WithLogger attaches a logger for events not reported through return values,
+// such as unsolicited datasets skipped by Call. Pass nil to disable logging.
 func WithLogger(l *slog.Logger) Option {
 	return func(c *Client) {
 		c.log = l
+	}
+}
+
+// WithCallTimeout sets how long Call waits for replies when its context has
+// no deadline. Non-positive values keep the default of 5 seconds.
+func WithCallTimeout(d time.Duration) Option {
+	return func(c *Client) {
+		if d > 0 {
+			c.callTimeout = d
+		}
 	}
 }
 
