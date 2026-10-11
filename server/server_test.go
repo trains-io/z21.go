@@ -217,24 +217,35 @@ func TestServeReturnsNilOnCancel(t *testing.T) {
 }
 
 func TestServeReturnsErrServerClosedAfterClose(t *testing.T) {
-	srv, err := server.New("127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("New: %v", err)
+	tests := []struct {
+		name string
+		opts []server.Option
+	}{
+		{name: "one socket"},
+		{name: "two sockets", opts: []server.Option{server.WithAdditionalAddr("127.0.0.1:0")}},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, err := server.New("127.0.0.1:0", tt.opts...)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
 
-	done := make(chan error, 1)
-	go func() { done <- srv.Serve(context.Background()) }()
-	if err := srv.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
+			done := make(chan error, 1)
+			go func() { done <- srv.Serve(context.Background()) }()
+			if err := srv.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
 
-	select {
-	case err := <-done:
-		if !errors.Is(err, server.ErrServerClosed) {
-			t.Fatalf("Serve = %v, want ErrServerClosed", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Serve did not return after Close")
+			select {
+			case err := <-done:
+				if !errors.Is(err, server.ErrServerClosed) {
+					t.Fatalf("Serve = %v, want ErrServerClosed", err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("Serve did not return after Close")
+			}
+		})
 	}
 }
 
@@ -242,4 +253,68 @@ func TestNewInvalidAddr(t *testing.T) {
 	if _, err := server.New("not-an-addr"); err == nil {
 		t.Fatal("New succeeded, want error")
 	}
+	if _, err := server.New("127.0.0.1:0", server.WithAdditionalAddr("not-an-addr")); err == nil {
+		t.Fatal("New with invalid additional addr succeeded, want error")
+	}
+}
+
+func TestNewReleasesSocketsOnError(t *testing.T) {
+	busy, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatalf("ListenUDP: %v", err)
+	}
+	defer busy.Close()
+	free, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatalf("ListenUDP: %v", err)
+	}
+	addr := free.LocalAddr().String()
+	free.Close()
+
+	if _, err := server.New(addr, server.WithAdditionalAddr(busy.LocalAddr().String())); err == nil {
+		t.Fatal("New succeeded on a busy additional addr, want error")
+	}
+	srv, err := server.New(addr)
+	if err != nil {
+		t.Fatalf("New after failed New: %v (socket on %s not released)", err, addr)
+	}
+	srv.Close()
+}
+
+func TestAdditionalAddrSharesSessions(t *testing.T) {
+	srv := startServer(t,
+		server.WithAdditionalAddr("127.0.0.1:0"),
+		server.WithHandler(server.HandlerFunc(func(w server.ResponseWriter, r *server.Request) {
+			hwInfoHandler(w, r)
+			if r.Message.Header == protocol.HeaderLANGetSerialNumber {
+				w.Broadcast(protocol.BroadcastFlagSystemState, protocol.EncodeSystemState(protocol.SystemState{}))
+			}
+		})),
+	)
+	addrs := srv.Addrs()
+	if len(addrs) != 2 || addrs[0].String() != srv.Addr().String() {
+		t.Fatalf("Addrs = %v, want Addr and one additional address", addrs)
+	}
+	primary := dial(t, srv)
+	alternate, err := client.Dial(addrs[1].String())
+	if err != nil {
+		t.Fatalf("Dial alternate: %v", err)
+	}
+	t.Cleanup(func() { alternate.Close() })
+
+	// The client socket is connected, so replies only arrive from the socket it dialed.
+	subscribe(t, alternate, protocol.BroadcastFlagSystemState)
+	if _, err := alternate.Call(testContext(t), protocol.GetHWInfo()); err != nil {
+		t.Fatalf("Call on alternate socket: %v", err)
+	}
+
+	if _, err := primary.Call(testContext(t), protocol.GetSerialNumber()); err != nil {
+		t.Fatalf("Call on primary socket: %v", err)
+	}
+	expectPacket(t, alternate, protocol.HeaderLANSystemStateDataChanged)
+
+	if n := srv.Broadcast(protocol.BroadcastFlagSystemState, protocol.EncodeSystemState(protocol.SystemState{})); n != 1 {
+		t.Fatalf("Broadcast sent to %d clients, want 1", n)
+	}
+	expectPacket(t, alternate, protocol.HeaderLANSystemStateDataChanged)
 }

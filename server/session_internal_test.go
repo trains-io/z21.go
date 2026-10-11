@@ -32,7 +32,7 @@ func send(t *testing.T, s *Server, from netip.AddrPort, msgs ...protocol.Message
 	if err != nil {
 		t.Fatalf("MarshalAll: %v", err)
 	}
-	s.handlePacket(from, b)
+	s.handlePacket(peer{conn: s.conns[0], addr: from}, b)
 }
 
 var (
@@ -81,7 +81,7 @@ func TestExpiredSessionStartsFresh(t *testing.T) {
 	send(t, s, clientA, protocol.SetBroadcastFlags(protocol.BroadcastFlagSystemState))
 	clock.advance(DefaultSessionTimeout + time.Second)
 
-	if c := s.clientFor(clientA); c.BroadcastFlags != 0 {
+	if c := s.clientFor(peer{conn: s.conns[0], addr: clientA}); c.BroadcastFlags != 0 {
 		t.Fatalf("BroadcastFlags after expiry = %#08x, want 0", c.BroadcastFlags)
 	}
 }

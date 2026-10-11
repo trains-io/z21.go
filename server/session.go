@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net"
 	"net/netip"
 	"slices"
 	"time"
@@ -18,6 +19,7 @@ const maxLocoSubscriptions = 16
 
 // session is the server-side state of one client, keyed by its UDP address.
 type session struct {
+	conn           *net.UDPConn // socket the client last sent to; replies and broadcasts use it
 	broadcastFlags uint32
 	lastSeen       time.Time
 	locos          []uint16 // subscribed loco addresses, oldest first
@@ -49,20 +51,21 @@ func (s *Server) subscribeLoco(c Client, msg protocol.Message) {
 	sess.locos = append(sess.locos, addr)
 }
 
-// clientFor returns the client for addr, creating its session on first contact,
-// and marks it as seen now.
-func (s *Server) clientFor(addr netip.AddrPort) Client {
+// clientFor returns the client for p, creating its session on first contact,
+// and marks it as seen now on the socket it used.
+func (s *Server) clientFor(p peer) Client {
 	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	sess, ok := s.sessions[addr]
+	sess, ok := s.sessions[p.addr]
 	if !ok || s.expired(sess, now) {
 		s.pruneLocked(now)
 		sess = &session{}
-		s.sessions[addr] = sess
+		s.sessions[p.addr] = sess
 	}
+	sess.conn = p.conn
 	sess.lastSeen = now
-	return Client{Addr: addr, BroadcastFlags: sess.broadcastFlags}
+	return Client{Addr: p.addr, BroadcastFlags: sess.broadcastFlags}
 }
 
 func (s *Server) expired(sess *session, now time.Time) bool {
@@ -106,17 +109,16 @@ func (s *Server) handleSession(w *responseWriter, c Client, msg protocol.Message
 	return true
 }
 
-// recipients returns the addresses of active clients whose session matches,
-// excluding except.
-func (s *Server) recipients(except netip.AddrPort, match func(*session) bool) []netip.AddrPort {
+// recipients returns the active clients whose session matches, excluding except.
+func (s *Server) recipients(except netip.AddrPort, match func(*session) bool) []peer {
 	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pruneLocked(now)
-	var out []netip.AddrPort
+	var out []peer
 	for addr, sess := range s.sessions {
 		if addr != except && match(sess) {
-			out = append(out, addr)
+			out = append(out, peer{conn: sess.conn, addr: addr})
 		}
 	}
 	return out
@@ -163,7 +165,7 @@ const locoInfoFlags = protocol.BroadcastFlagXpressNet | protocol.BroadcastFlagAl
 
 // send writes msgs as one packet to each address in to and returns the number
 // of successful writes. flag is only reported to the observer.
-func (s *Server) send(flag uint32, to []netip.AddrPort, msgs []protocol.Message) int {
+func (s *Server) send(flag uint32, to []peer, msgs []protocol.Message) int {
 	if len(msgs) == 0 {
 		return 0
 	}
@@ -172,10 +174,14 @@ func (s *Server) send(flag uint32, to []netip.AddrPort, msgs []protocol.Message)
 		s.log.Error("z21 marshal broadcast", "err", err)
 		return 0
 	}
-	s.observe(Packet{Direction: DirectionTX, Broadcast: true, Flag: flag, Recipients: to, Raw: out, Messages: msgs})
+	addrs := make([]netip.AddrPort, len(to))
+	for i, p := range to {
+		addrs[i] = p.addr
+	}
+	s.observe(Packet{Direction: DirectionTX, Broadcast: true, Flag: flag, Recipients: addrs, Raw: out, Messages: msgs})
 	sent := 0
-	for _, addr := range to {
-		if s.write(addr, out) {
+	for _, p := range to {
+		if s.write(p, out) {
 			sent++
 		}
 	}

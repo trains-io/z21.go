@@ -10,7 +10,8 @@ import (
 // Handler responds to one Z21 request dataset.
 //
 // ServeZ21 is called once per dataset, in the order the datasets arrive. Datasets
-// from all clients are handled sequentially, so a handler must not block.
+// from all clients and all sockets are handled sequentially, so a handler must
+// not block.
 type Handler interface {
 	ServeZ21(w ResponseWriter, r *Request)
 }
@@ -64,7 +65,7 @@ type responseWriter struct {
 // queuedBroadcast is a broadcast made by a handler, sent after the reply.
 type queuedBroadcast struct {
 	flag uint32
-	to   []netip.AddrPort
+	to   []peer
 	msgs []protocol.Message
 }
 
@@ -81,7 +82,7 @@ func (w *responseWriter) BroadcastLocoInfo(info protocol.LocoInfo) {
 	w.queue(locoInfoFlags, to, []protocol.Message{protocol.EncodeLocoInfo(info)})
 }
 
-func (w *responseWriter) queue(flag uint32, to []netip.AddrPort, msgs []protocol.Message) {
+func (w *responseWriter) queue(flag uint32, to []peer, msgs []protocol.Message) {
 	if len(msgs) == 0 {
 		return
 	}

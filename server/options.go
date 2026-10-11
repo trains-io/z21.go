@@ -41,6 +41,16 @@ func WithSessionTimeout(d time.Duration) Option {
 	}
 }
 
+// WithAdditionalAddr makes New also bind a socket on addr, for example
+// ":21106" (AlternatePort). All sockets share the same client sessions; a
+// client gets replies and broadcasts on the socket it last sent to. Repeat the
+// option for more addresses.
+func WithAdditionalAddr(addr string) Option {
+	return func(s *Server) {
+		s.additionalAddrs = append(s.additionalAddrs, addr)
+	}
+}
+
 func applyOptions(s *Server, opts []Option) {
 	for _, opt := range opts {
 		if opt != nil {

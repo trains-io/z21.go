@@ -19,40 +19,47 @@ import (
 // DefaultPort is the Z21 LAN UDP port (spec §1.1).
 const DefaultPort = 21105
 
+// AlternatePort is the second UDP port a Z21 answers on (spec §1.1). Clients
+// should prefer DefaultPort; serve both with WithAdditionalAddr.
+const AlternatePort = 21106
+
 // maxPacketSize is the largest UDP payload the server reads.
 const maxPacketSize = 65535
 
 // ErrServerClosed is returned by Serve after Close.
 var ErrServerClosed = errors.New("z21: server closed")
 
-// Server is a Z21 LAN server listening on a UDP socket.
+// Server is a Z21 LAN server listening on one or more UDP sockets that share
+// the same client sessions.
 type Server struct {
-	conn     *net.UDPConn
-	handler  Handler
-	log      *slog.Logger
-	observer Observer
+	conns           []*net.UDPConn // conns[0] is bound to the address passed to New
+	additionalAddrs []string
+	handler         Handler
+	log             *slog.Logger
+	observer        Observer
 
 	sessionTimeout time.Duration
 	now            func() time.Time
+
+	// handleMu serializes packet handling across sockets, so the handler is
+	// never called concurrently.
+	handleMu sync.Mutex
 
 	mu       sync.Mutex
 	sessions map[netip.AddrPort]*session
 }
 
-// New binds a UDP socket on addr (for example ":21105" or "127.0.0.1:0").
-// Call Serve to start handling requests.
-func New(addr string, opts ...Option) (*Server, error) {
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("z21: resolve %q: %w", addr, err)
-	}
-	conn, err := net.ListenUDP("udp", udpAddr)
-	if err != nil {
-		return nil, fmt.Errorf("z21: listen %q: %w", addr, err)
-	}
+// peer is a client address and the server socket the client talks to.
+type peer struct {
+	conn *net.UDPConn
+	addr netip.AddrPort
+}
 
+// New binds a UDP socket on addr (for example ":21105" or "127.0.0.1:0") and
+// on every address given with WithAdditionalAddr. Call Serve to start handling
+// requests.
+func New(addr string, opts ...Option) (*Server, error) {
 	s := &Server{
-		conn:           conn,
 		sessionTimeout: DefaultSessionTimeout,
 		now:            time.Now,
 		sessions:       make(map[netip.AddrPort]*session),
@@ -61,30 +68,81 @@ func New(addr string, opts ...Option) (*Server, error) {
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
 	}
+
+	for _, a := range append([]string{addr}, s.additionalAddrs...) {
+		conn, err := listen(a)
+		if err != nil {
+			_ = s.Close()
+			return nil, err
+		}
+		s.conns = append(s.conns, conn)
+	}
 	return s, nil
 }
 
-// Addr returns the local address the server is bound to.
+func listen(addr string) (*net.UDPConn, error) {
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("z21: resolve %q: %w", addr, err)
+	}
+	conn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		return nil, fmt.Errorf("z21: listen %q: %w", addr, err)
+	}
+	return conn, nil
+}
+
+// Addr returns the local address of the socket bound to the address passed to New.
 func (s *Server) Addr() net.Addr {
-	return s.conn.LocalAddr()
+	return s.conns[0].LocalAddr()
 }
 
-// Close closes the socket. A running Serve returns ErrServerClosed.
+// Addrs returns the local addresses of all sockets, starting with Addr.
+func (s *Server) Addrs() []net.Addr {
+	addrs := make([]net.Addr, len(s.conns))
+	for i, conn := range s.conns {
+		addrs[i] = conn.LocalAddr()
+	}
+	return addrs
+}
+
+// Close closes all sockets. A running Serve returns ErrServerClosed.
 func (s *Server) Close() error {
-	return s.conn.Close()
+	var errs []error
+	for _, conn := range s.conns {
+		errs = append(errs, conn.Close())
+	}
+	return errors.Join(errs...)
 }
 
-// Serve reads and handles packets until ctx is cancelled (returns nil) or the
-// server is closed (returns ErrServerClosed).
+// Serve reads and handles packets on all sockets until ctx is cancelled
+// (returns nil) or the server is closed (returns ErrServerClosed). If reading
+// from one socket fails, Serve stops the others and returns that error.
 func (s *Server) Serve(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	errs := make(chan error, len(s.conns))
+	for _, conn := range s.conns {
+		go func() { errs <- s.serveConn(ctx, conn) }()
+	}
+	err := <-errs
+	cancel()
+	for range len(s.conns) - 1 {
+		<-errs
+	}
+	return err
+}
+
+func (s *Server) serveConn(ctx context.Context, conn *net.UDPConn) error {
 	stop := context.AfterFunc(ctx, func() {
-		_ = s.conn.SetReadDeadline(time.Now())
+		_ = conn.SetReadDeadline(time.Now())
 	})
 	defer stop()
 
 	buf := make([]byte, maxPacketSize)
 	for {
-		n, remote, err := s.conn.ReadFromUDPAddrPort(buf)
+		n, remote, err := conn.ReadFromUDPAddrPort(buf)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -95,22 +153,25 @@ func (s *Server) Serve(ctx context.Context) error {
 			return fmt.Errorf("z21: read: %w", err)
 		}
 		remote = netip.AddrPortFrom(remote.Addr().Unmap(), remote.Port())
-		s.handlePacket(remote, buf[:n])
+		s.handlePacket(peer{conn: conn, addr: remote}, buf[:n])
 	}
 }
 
 // handlePacket handles the datasets of one packet in order. Session requests
 // (broadcast flags, logoff) are handled by the server; all others go to the
 // handler.
-func (s *Server) handlePacket(from netip.AddrPort, payload []byte) {
+func (s *Server) handlePacket(from peer, payload []byte) {
+	s.handleMu.Lock()
+	defer s.handleMu.Unlock()
+
 	msgs, err := protocol.ParseAll(payload)
-	s.observe(Packet{Direction: DirectionRX, Remote: from, Raw: payload, Messages: msgs})
+	s.observe(Packet{Direction: DirectionRX, Remote: from.addr, Raw: payload, Messages: msgs})
 	if err != nil {
-		s.log.Debug("z21 ignore malformed packet", "from", from, "err", err)
+		s.log.Debug("z21 ignore malformed packet", "from", from.addr, "err", err)
 		return
 	}
 
-	w := &responseWriter{srv: s, sender: from}
+	w := &responseWriter{srv: s, sender: from.addr}
 	for _, msg := range msgs {
 		c := s.clientFor(from)
 		if s.handleSession(w, c, msg) {
@@ -129,16 +190,16 @@ func (s *Server) handlePacket(from netip.AddrPort, payload []byte) {
 	}
 }
 
-func (s *Server) sendReply(to netip.AddrPort, replies []protocol.Message) {
+func (s *Server) sendReply(to peer, replies []protocol.Message) {
 	if len(replies) == 0 {
 		return
 	}
 	out, err := protocol.MarshalAll(replies...)
 	if err != nil {
-		s.log.Error("z21 marshal reply", "to", to, "err", err)
+		s.log.Error("z21 marshal reply", "to", to.addr, "err", err)
 		return
 	}
-	s.observe(Packet{Direction: DirectionTX, Remote: to, Raw: out, Messages: replies})
+	s.observe(Packet{Direction: DirectionTX, Remote: to.addr, Raw: out, Messages: replies})
 	s.write(to, out)
 }
 
@@ -160,9 +221,9 @@ func (s *Server) observe(p Packet) {
 	}
 }
 
-func (s *Server) write(to netip.AddrPort, out []byte) bool {
-	if _, err := s.conn.WriteToUDPAddrPort(out, to); err != nil {
-		s.log.Error("z21 write", "to", to, "err", err)
+func (s *Server) write(to peer, out []byte) bool {
+	if _, err := to.conn.WriteToUDPAddrPort(out, to.addr); err != nil {
+		s.log.Error("z21 write", "to", to.addr, "err", err)
 		return false
 	}
 	return true
