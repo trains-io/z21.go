@@ -5,6 +5,7 @@ go 1.24
 require (
 	github.com/stretchr/testify v1.10.0
 	github.com/testcontainers/testcontainers-go v0.35.0
+	go.uber.org/goleak v1.3.0
 )
 
 require (
