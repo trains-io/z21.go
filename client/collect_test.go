@@ -11,39 +11,26 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/trains-io/z21.go/client"
 	"github.com/trains-io/z21.go/protocol"
+	"github.com/trains-io/z21.go/server"
 )
 
 func TestSend(t *testing.T) {
-	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
-	require.NoError(t, err)
-	defer conn.Close()
-
-	received := make(chan []byte, 1)
-	go func() {
-		buf := make([]byte, 1472)
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		n, _, err := conn.ReadFromUDP(buf)
-		if err == nil {
-			received <- append([]byte(nil), buf[:n]...)
-		}
-		close(received)
-	}()
-
-	c, err := client.Dial(conn.LocalAddr().String())
-	require.NoError(t, err)
-	defer c.Close()
+	received := make(chan protocol.Message, 1)
+	c := dialStation(t, startStation(t, server.HandlerFunc(func(_ server.ResponseWriter, r *server.Request) {
+		received <- r.Message
+	})))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	require.NoError(t, c.Send(ctx, protocol.GetHWInfo()))
 
-	raw := <-received
-	require.NotEmpty(t, raw)
-	msgs, err := protocol.ParseAll(raw)
-	require.NoError(t, err)
-	require.Len(t, msgs, 1)
-	require.Equal(t, protocol.HeaderLANGetHWInfo, msgs[0].Header)
+	select {
+	case msg := <-received:
+		require.Equal(t, protocol.GetHWInfo(), msg)
+	case <-ctx.Done():
+		t.Fatal("server did not receive the request")
+	}
 }
 
 func TestCollect(t *testing.T) {
@@ -98,37 +85,12 @@ func TestCollect(t *testing.T) {
 }
 
 func TestRequestCollect(t *testing.T) {
-	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
-	require.NoError(t, err)
-	defer conn.Close()
-
-	reply, err := protocol.Message{
-		Header: protocol.HeaderLANGetBroadcastFlags,
-		Data:   []byte{0x01, 0x00, 0x00, 0x00},
-	}.Marshal()
-	require.NoError(t, err)
-
-	go func() {
-		buf := make([]byte, 1472)
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		n, addr, err := conn.ReadFromUDP(buf)
-		if err != nil {
-			return
-		}
-		msgs, err := protocol.ParseAll(buf[:n])
-		if err != nil || len(msgs) != 1 || msgs[0].Header != protocol.HeaderLANGetBroadcastFlags {
-			return
-		}
-		_, _ = conn.WriteToUDP(reply, addr)
-	}()
-
-	c, err := client.Dial(conn.LocalAddr().String())
-	require.NoError(t, err)
-	defer c.Close()
+	c := dialStation(t, startStation(t, nil))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
+	require.NoError(t, c.Send(ctx, protocol.SetBroadcastFlags(1)))
 	msgs, err := c.RequestCollect(ctx, protocol.GetBroadcastFlags(), 500*time.Millisecond)
 	require.NoError(t, err)
 	require.NotEmpty(t, msgs)
@@ -139,13 +101,7 @@ func TestRequestCollect(t *testing.T) {
 }
 
 func TestCollectReturnsOnCancel(t *testing.T) {
-	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
-	require.NoError(t, err)
-	defer conn.Close()
-
-	c, err := client.Dial(conn.LocalAddr().String())
-	require.NoError(t, err)
-	defer c.Close()
+	c := dialStation(t, startStation(t, nil))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan []protocol.Message, 1)

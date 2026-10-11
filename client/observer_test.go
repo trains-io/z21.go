@@ -5,10 +5,8 @@ package client_test
 import (
 	"bytes"
 	"context"
-	"net"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/trains-io/z21.go/client"
 	"github.com/trains-io/z21.go/protocol"
@@ -38,30 +36,8 @@ func (o *recordingObserver) OnPacket(_ context.Context, dir client.Direction, re
 }
 
 func TestWithObserverOnDial(t *testing.T) {
-	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-
-	go func() {
-		buf := make([]byte, 1472)
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		n, addr, err := conn.ReadFromUDP(buf)
-		if err != nil {
-			return
-		}
-		reply, _ := protocol.Message{Header: protocol.HeaderLANGetHWInfo, Data: []byte{0x01}}.Marshal()
-		_, _ = conn.WriteToUDP(reply, addr)
-		_ = n
-	}()
-
 	var rec recordingObserver
-	c, err := client.Dial(conn.LocalAddr().String(), client.WithObserver(&rec))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
+	c := dialStation(t, startStation(t, nil), client.WithObserver(&rec))
 
 	if _, err := c.Call(t.Context(), protocol.GetHWInfo()); err != nil {
 		t.Fatal(err)
