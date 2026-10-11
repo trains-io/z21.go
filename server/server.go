@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -26,9 +27,10 @@ var ErrServerClosed = errors.New("z21: server closed")
 
 // Server is a Z21 LAN server listening on a UDP socket.
 type Server struct {
-	conn    *net.UDPConn
-	handler Handler
-	log     *slog.Logger
+	conn     *net.UDPConn
+	handler  Handler
+	log      *slog.Logger
+	observer Observer
 
 	sessionTimeout time.Duration
 	now            func() time.Time
@@ -102,6 +104,7 @@ func (s *Server) Serve(ctx context.Context) error {
 // handler.
 func (s *Server) handlePacket(from netip.AddrPort, payload []byte) {
 	msgs, err := protocol.ParseAll(payload)
+	s.observe(Packet{Direction: DirectionRX, Remote: from, Raw: payload, Messages: msgs})
 	if err != nil {
 		s.log.Debug("z21 ignore malformed packet", "from", from, "err", err)
 		return
@@ -117,7 +120,7 @@ func (s *Server) handlePacket(from netip.AddrPort, payload []byte) {
 		if s.handler == nil {
 			continue
 		}
-		s.handler.ServeZ21(w, &Request{Message: msg, Client: c})
+		s.serveZ21(w, &Request{Message: msg, Client: c})
 	}
 	if len(w.replies) == 0 {
 		return
@@ -128,7 +131,26 @@ func (s *Server) handlePacket(from netip.AddrPort, payload []byte) {
 		s.log.Error("z21 marshal reply", "to", from, "err", err)
 		return
 	}
+	s.observe(Packet{Direction: DirectionTX, Remote: from, Raw: out, Messages: w.replies})
 	s.write(from, out)
+}
+
+// serveZ21 calls the handler and recovers from a panic, so a faulty handler
+// only loses the reply to one dataset instead of stopping the server.
+func (s *Server) serveZ21(w ResponseWriter, r *Request) {
+	defer func() {
+		if p := recover(); p != nil {
+			s.log.Error("z21 handler panic", "from", r.Client.Addr, "request", protocol.MessageName(r.Message),
+				"panic", p, "stack", string(debug.Stack()))
+		}
+	}()
+	s.handler.ServeZ21(w, r)
+}
+
+func (s *Server) observe(p Packet) {
+	if s.observer != nil {
+		s.observer.OnPacket(p)
+	}
 }
 
 func (s *Server) write(to netip.AddrPort, out []byte) bool {

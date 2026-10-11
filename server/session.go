@@ -143,7 +143,7 @@ func locoInfoMatch(addr uint16) func(*session) bool {
 // It is safe to call from any goroutine, for example to push state changes that
 // do not originate from a client request.
 func (s *Server) Broadcast(flag uint32, msgs ...protocol.Message) int {
-	return s.send(s.recipients(netip.AddrPort{}, flagMatch(flag)), msgs)
+	return s.send(flag, s.recipients(netip.AddrPort{}, flagMatch(flag)), msgs)
 }
 
 // BroadcastLocoInfo sends LAN_X_LOCO_INFO for info.Address to the clients that
@@ -151,11 +151,17 @@ func (s *Server) Broadcast(flag uint32, msgs ...protocol.Message) int {
 // returns the number of clients it was sent to. It is safe to call from any
 // goroutine.
 func (s *Server) BroadcastLocoInfo(info protocol.LocoInfo) int {
-	return s.send(s.recipients(netip.AddrPort{}, locoInfoMatch(info.Address)), []protocol.Message{protocol.EncodeLocoInfo(info)})
+	return s.send(
+		protocol.BroadcastFlagXpressNet|protocol.BroadcastFlagAllLocoInfo,
+		s.recipients(netip.AddrPort{}, locoInfoMatch(info.Address)),
+		[]protocol.Message{protocol.EncodeLocoInfo(info)},
+	)
 }
 
-func (s *Server) send(to []netip.AddrPort, msgs []protocol.Message) int {
-	if len(msgs) == 0 || len(to) == 0 {
+// send writes msgs as one packet to each address in to and returns the number
+// of successful writes. flag is only reported to the observer.
+func (s *Server) send(flag uint32, to []netip.AddrPort, msgs []protocol.Message) int {
+	if len(msgs) == 0 {
 		return 0
 	}
 	out, err := protocol.MarshalAll(msgs...)
@@ -163,6 +169,7 @@ func (s *Server) send(to []netip.AddrPort, msgs []protocol.Message) int {
 		s.log.Error("z21 marshal broadcast", "err", err)
 		return 0
 	}
+	s.observe(Packet{Direction: DirectionTX, Broadcast: true, Flag: flag, Recipients: to, Raw: out, Messages: msgs})
 	sent := 0
 	for _, addr := range to {
 		if s.write(addr, out) {

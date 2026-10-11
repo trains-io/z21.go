@@ -24,6 +24,14 @@ func WithLogger(l *slog.Logger) Option {
 	}
 }
 
+// WithObserver attaches an observer for every packet received and sent, for
+// example NewTracer(os.Stderr). Pass nil to disable.
+func WithObserver(o Observer) Option {
+	return func(s *Server) {
+		s.observer = o
+	}
+}
+
 // WithSessionTimeout sets how long a client may stay silent before the server
 // forgets its session (default DefaultSessionTimeout). Zero or negative keeps
 // sessions until LAN_LOGOFF.

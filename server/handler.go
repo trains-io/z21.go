@@ -63,7 +63,7 @@ func (w *responseWriter) Reply(msgs ...protocol.Message) {
 }
 
 func (w *responseWriter) Broadcast(flag uint32, msgs ...protocol.Message) {
-	w.srv.send(w.srv.recipients(w.sender, flagMatch(flag)), msgs)
+	w.srv.send(flag, w.srv.recipients(w.sender, flagMatch(flag)), msgs)
 }
 
 func (w *responseWriter) BroadcastLocoInfo(info protocol.LocoInfo) {
