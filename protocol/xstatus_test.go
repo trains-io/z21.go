@@ -50,7 +50,7 @@ func TestXStatusFromMessages(t *testing.T) {
 }
 
 func TestEncodeXStatus(t *testing.T) {
-	msg := EncodeXStatus(XStatus{CentralState: xStatusTrackVoltageOff})
+	msg := EncodeXStatus(XStatus{CentralState: CentralStateTrackVoltageOff})
 	if msg.Header != HeaderLANX {
 		t.Fatalf("Header = %#x, want %#x", msg.Header, HeaderLANX)
 	}
@@ -64,7 +64,7 @@ func TestEncodeXStatus(t *testing.T) {
 }
 
 func TestEncodeXStatusRoundTrip(t *testing.T) {
-	states := []byte{0x00, xStatusEmergencyStop, xStatusShortCircuit | xStatusTrackVoltageOff, xStatusProgrammingMode, 0xff}
+	states := []byte{0x00, CentralStateEmergencyStop, CentralStateShortCircuit | CentralStateTrackVoltageOff, CentralStateProgrammingMode, 0xff}
 	for _, state := range states {
 		in := XStatus{CentralState: state}
 		got, err := XStatusFromMessages([]Message{EncodeXStatus(in)})

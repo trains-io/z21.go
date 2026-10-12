@@ -6,19 +6,33 @@ import (
 	"strings"
 )
 
+// CentralState bits, reported in SystemState.CentralState and XStatus.CentralState
+// (spec §2.12, §2.18).
 const (
-	centralStateExHighTemperature      byte = 0x01
-	centralStateExPowerLost            byte = 0x02
-	centralStateExShortCircuitExternal byte = 0x04
-	centralStateExShortCircuitInternal byte = 0x08
-	centralStateExRCN213               byte = 0x20
-	capabilityDCC                      byte = 0x01
-	capabilityMM                       byte = 0x02
-	capabilityRailCom                  byte = 0x08
-	capabilityLocoCmds                 byte = 0x10
-	capabilityAccessoryCmds            byte = 0x20
-	capabilityDetectorCmds             byte = 0x40
-	capabilityNeedsUnlockCode          byte = 0x80
+	CentralStateEmergencyStop   byte = 0x01
+	CentralStateTrackVoltageOff byte = 0x02
+	CentralStateShortCircuit    byte = 0x04
+	CentralStateProgrammingMode byte = 0x20
+)
+
+// CentralStateEx bits, reported in SystemState.CentralStateEx (spec §2.18).
+const (
+	CentralStateExHighTemperature      byte = 0x01
+	CentralStateExPowerLost            byte = 0x02
+	CentralStateExShortCircuitExternal byte = 0x04
+	CentralStateExShortCircuitInternal byte = 0x08
+	CentralStateExRCN213               byte = 0x20
+)
+
+// Capability bits, reported in SystemState.Capabilities (spec §2.18).
+const (
+	CapabilityDCC             byte = 0x01
+	CapabilityMM              byte = 0x02
+	CapabilityRailCom         byte = 0x08
+	CapabilityLocoCmds        byte = 0x10
+	CapabilityAccessoryCmds   byte = 0x20
+	CapabilityDetectorCmds    byte = 0x40
+	CapabilityNeedsUnlockCode byte = 0x80
 )
 
 // SystemState is parsed from a LAN_SYSTEMSTATE_DATACHANGED reply (spec §2.18).
@@ -105,19 +119,19 @@ func FormatCentralState(state byte) string {
 // FormatCentralStateExFlags renders active CentralStateEx flags (spec §2.18).
 func FormatCentralStateExFlags(state byte) string {
 	var flags []string
-	if state&centralStateExHighTemperature != 0 {
+	if state&CentralStateExHighTemperature != 0 {
 		flags = append(flags, "high temperature")
 	}
-	if state&centralStateExPowerLost != 0 {
+	if state&CentralStateExPowerLost != 0 {
 		flags = append(flags, "power lost")
 	}
-	if state&centralStateExShortCircuitExternal != 0 {
+	if state&CentralStateExShortCircuitExternal != 0 {
 		flags = append(flags, "external short circuit")
 	}
-	if state&centralStateExShortCircuitInternal != 0 {
+	if state&CentralStateExShortCircuitInternal != 0 {
 		flags = append(flags, "internal short circuit")
 	}
-	if state&centralStateExRCN213 != 0 {
+	if state&CentralStateExRCN213 != 0 {
 		flags = append(flags, "RCN-213 turnout addresses")
 	}
 	if len(flags) == 0 {
@@ -132,25 +146,25 @@ func FormatCapabilities(caps byte) string {
 		return "(not reported)"
 	}
 	var flags []string
-	if caps&capabilityDCC != 0 {
+	if caps&CapabilityDCC != 0 {
 		flags = append(flags, "DCC")
 	}
-	if caps&capabilityMM != 0 {
+	if caps&CapabilityMM != 0 {
 		flags = append(flags, "MM")
 	}
-	if caps&capabilityRailCom != 0 {
+	if caps&CapabilityRailCom != 0 {
 		flags = append(flags, "RailCom")
 	}
-	if caps&capabilityLocoCmds != 0 {
+	if caps&CapabilityLocoCmds != 0 {
 		flags = append(flags, "loco commands")
 	}
-	if caps&capabilityAccessoryCmds != 0 {
+	if caps&CapabilityAccessoryCmds != 0 {
 		flags = append(flags, "accessory commands")
 	}
-	if caps&capabilityDetectorCmds != 0 {
+	if caps&CapabilityDetectorCmds != 0 {
 		flags = append(flags, "detector commands")
 	}
-	if caps&capabilityNeedsUnlockCode != 0 {
+	if caps&CapabilityNeedsUnlockCode != 0 {
 		flags = append(flags, "needs unlock code")
 	}
 	if len(flags) == 0 {

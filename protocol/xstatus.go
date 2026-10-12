@@ -6,13 +6,9 @@ import (
 )
 
 const (
-	xCommandGetStatus      byte = 0x24
-	xHeaderStatusReply     byte = 0x62
-	xStatusDB0             byte = 0x22
-	xStatusEmergencyStop   byte = 0x01
-	xStatusTrackVoltageOff byte = 0x02
-	xStatusShortCircuit    byte = 0x04
-	xStatusProgrammingMode byte = 0x20
+	xCommandGetStatus  byte = 0x24
+	xHeaderStatusReply byte = 0x62
+	xStatusDB0         byte = 0x22
 )
 
 // XStatus is parsed from a LAN_X_GET_STATUS reply (spec §2.4 / §2.12).
@@ -68,16 +64,16 @@ func IsXStatusChanged(data []byte) bool {
 // FormatXStatusFlags renders active central-state flags (spec §2.12).
 func FormatXStatusFlags(state byte) string {
 	var flags []string
-	if state&xStatusEmergencyStop != 0 {
+	if state&CentralStateEmergencyStop != 0 {
 		flags = append(flags, "emergency stop")
 	}
-	if state&xStatusTrackVoltageOff != 0 {
+	if state&CentralStateTrackVoltageOff != 0 {
 		flags = append(flags, "track voltage off")
 	}
-	if state&xStatusShortCircuit != 0 {
+	if state&CentralStateShortCircuit != 0 {
 		flags = append(flags, "short circuit")
 	}
-	if state&xStatusProgrammingMode != 0 {
+	if state&CentralStateProgrammingMode != 0 {
 		flags = append(flags, "programming mode")
 	}
 	if len(flags) == 0 {

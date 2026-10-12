@@ -58,7 +58,7 @@ func TestEncodeSystemState(t *testing.T) {
 		Temperature:         42,
 		SupplyVoltage:       10000,
 		VCCVoltage:          1000,
-		Capabilities:        capabilityDCC | capabilityLocoCmds | capabilityAccessoryCmds,
+		Capabilities:        CapabilityDCC | CapabilityLocoCmds | CapabilityAccessoryCmds,
 	})
 	if msg.Header != HeaderLANSystemStateDataChanged {
 		t.Fatalf("Header = %#x, want %#x", msg.Header, HeaderLANSystemStateDataChanged)
@@ -85,8 +85,8 @@ func TestEncodeSystemStateRoundTrip(t *testing.T) {
 			Temperature:         -20,
 			SupplyVoltage:       0xffff,
 			VCCVoltage:          18000,
-			CentralState:        xStatusEmergencyStop | xStatusTrackVoltageOff,
-			CentralStateEx:      centralStateExHighTemperature | centralStateExRCN213,
+			CentralState:        CentralStateEmergencyStop | CentralStateTrackVoltageOff,
+			CentralStateEx:      CentralStateExHighTemperature | CentralStateExRCN213,
 			Capabilities:        0xff,
 		},
 	}
