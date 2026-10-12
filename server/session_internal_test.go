@@ -160,6 +160,50 @@ func TestLocoInfoMatch(t *testing.T) {
 	}
 }
 
+func TestClients(t *testing.T) {
+	s, clock := newTestServer(t)
+	send(t, s, clientB, protocol.GetHWInfo())
+	clock.advance(time.Second)
+	send(t, s, clientA, protocol.SetBroadcastFlags(protocol.BroadcastFlagXpressNet), protocol.GetLocoInfo(3), protocol.GetLocoInfo(17))
+
+	got := s.Clients()
+	if len(got) != 2 {
+		t.Fatalf("Clients() = %+v, want 2 clients", got)
+	}
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	local := localAddr(s.conns[0])
+	wantA := ClientInfo{Addr: clientA, LocalAddr: local, BroadcastFlags: protocol.BroadcastFlagXpressNet, Locos: []uint16{3, 17}, LastSeen: start.Add(time.Second)}
+	wantB := ClientInfo{Addr: clientB, LocalAddr: local, LastSeen: start}
+	for i, want := range []ClientInfo{wantA, wantB} {
+		c := got[i]
+		if c.Addr != want.Addr || c.LocalAddr != want.LocalAddr || c.BroadcastFlags != want.BroadcastFlags ||
+			!slices.Equal(c.Locos, want.Locos) || !c.LastSeen.Equal(want.LastSeen) {
+			t.Fatalf("Clients()[%d] = %+v, want %+v", i, c, want)
+		}
+	}
+
+	got[0].Locos[0] = 99
+	if again := s.Clients(); again[0].Locos[0] != 3 {
+		t.Fatalf("Clients() shares the subscription slice: %v", again[0].Locos)
+	}
+}
+
+func TestClientsDropsEndedSessions(t *testing.T) {
+	s, clock := newTestServer(t)
+	send(t, s, clientA, protocol.GetHWInfo())
+	send(t, s, clientB, protocol.GetHWInfo())
+
+	send(t, s, clientA, protocol.Message{Header: protocol.HeaderLANLogoff})
+	if got := s.Clients(); len(got) != 1 || got[0].Addr != clientB {
+		t.Fatalf("Clients() after logoff = %+v, want only client B", got)
+	}
+
+	clock.advance(DefaultSessionTimeout + time.Second)
+	if got := s.Clients(); len(got) != 0 {
+		t.Fatalf("Clients() after timeout = %+v, want none", got)
+	}
+}
+
 func TestNewSessionPrunesExpiredSessions(t *testing.T) {
 	s, clock := newTestServer(t)
 	send(t, s, clientA, protocol.GetHWInfo())

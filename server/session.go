@@ -124,6 +124,44 @@ func (s *Server) recipients(except netip.AddrPort, match func(*session) bool) []
 	return out
 }
 
+// ClientInfo describes the session of a connected client.
+type ClientInfo struct {
+	Addr           netip.AddrPort
+	LocalAddr      netip.AddrPort // server socket the client last sent to
+	BroadcastFlags uint32         // set by LAN_SET_BROADCASTFLAGS (spec §2.16)
+	Locos          []uint16       // loco-info subscriptions, oldest first (spec §4)
+	LastSeen       time.Time
+}
+
+// Clients returns the active clients, ordered by address. Sessions that have
+// timed out are dropped first. It is safe to call from any goroutine.
+func (s *Server) Clients() []ClientInfo {
+	now := s.now()
+	s.mu.Lock()
+	s.pruneLocked(now)
+	out := make([]ClientInfo, 0, len(s.sessions))
+	for addr, sess := range s.sessions {
+		out = append(out, ClientInfo{
+			Addr:           addr,
+			LocalAddr:      localAddr(sess.conn),
+			BroadcastFlags: sess.broadcastFlags,
+			Locos:          slices.Clone(sess.locos),
+			LastSeen:       sess.lastSeen,
+		})
+	}
+	s.mu.Unlock()
+	slices.SortFunc(out, func(a, b ClientInfo) int { return a.Addr.Compare(b.Addr) })
+	return out
+}
+
+func localAddr(conn *net.UDPConn) netip.AddrPort {
+	if conn == nil {
+		return netip.AddrPort{}
+	}
+	ap := conn.LocalAddr().(*net.UDPAddr).AddrPort()
+	return netip.AddrPortFrom(ap.Addr().Unmap(), ap.Port())
+}
+
 func flagMatch(flag uint32) func(*session) bool {
 	return func(sess *session) bool { return sess.broadcastFlags&flag != 0 }
 }

@@ -317,4 +317,15 @@ func TestAdditionalAddrSharesSessions(t *testing.T) {
 		t.Fatalf("Broadcast sent to %d clients, want 1", n)
 	}
 	expectPacket(t, alternate, protocol.HeaderLANSystemStateDataChanged)
+
+	local := map[netip.AddrPort]string{}
+	for _, c := range srv.Clients() {
+		local[c.Addr] = c.LocalAddr.String()
+	}
+	for c, want := range map[*client.Client]string{primary: addrs[0].String(), alternate: addrs[1].String()} {
+		addr := c.LocalAddr().(*net.UDPAddr).AddrPort()
+		if got := local[addr]; got != want {
+			t.Fatalf("LocalAddr of %v = %q, want %q", addr, got, want)
+		}
+	}
 }
