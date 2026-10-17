@@ -19,6 +19,10 @@ const DefaultKeepAliveInterval = 30 * time.Second
 // its broadcast flags. It does not wait for the replies: Call skips them as
 // unsolicited datasets, ReadPacket returns them like any other.
 //
+// The datasets set with SetPrependMessages go in front, as with Send and Call.
+// Prepending LAN_SET_BROADCASTFLAGS thus restores the subscriptions when the
+// Z21 has forgotten the client anyway, for example after a restart.
+//
 // KeepAlive blocks; run it in its own goroutine. Unlike the other methods it
 // may run concurrently with them, as long as the setters (SetObserver,
 // SetPrependMessages, …) are not called meanwhile. The observer then sees
@@ -34,7 +38,7 @@ func (c *Client) KeepAlive(ctx context.Context, interval time.Duration) error {
 	if interval <= 0 {
 		return fmt.Errorf("z21: keep-alive interval %v is not positive", interval)
 	}
-	payload, err := protocol.GetSerialNumber().Marshal()
+	payload, err := c.marshalOutbound([]protocol.Message{protocol.GetSerialNumber()})
 	if err != nil {
 		return fmt.Errorf("z21: keep-alive: %w", err)
 	}
