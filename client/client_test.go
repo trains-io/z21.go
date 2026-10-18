@@ -31,6 +31,15 @@ func TestCall(t *testing.T) {
 	}
 }
 
+func TestCallLocoCommandWithoutReply(t *testing.T) {
+	c := dialStation(t, startStation(t, nil), client.WithCallTimeout(time.Second))
+
+	msgs, err := c.Call(t.Context(), protocol.SetLocoDrive(3, protocol.LocoSpeedSteps128, true, 40))
+	if err != nil || msgs != nil {
+		t.Fatalf("Call(SetLocoDrive) = %v, %v; want no replies and no error without waiting", msgs, err)
+	}
+}
+
 func TestCallCombinedDeviceInfo(t *testing.T) {
 	c := dialStation(t, startStation(t, nil))
 

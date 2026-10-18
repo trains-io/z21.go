@@ -47,6 +47,30 @@ func TestRequestExpectsReply(t *testing.T) {
 	}
 }
 
+func TestRequestExpectsReplyLoco(t *testing.T) {
+	tests := []struct {
+		name string
+		req  Message
+		want bool
+	}{
+		{name: "get loco info", req: GetLocoInfo(3), want: true},
+		{name: "drive", req: SetLocoDrive(3, LocoSpeedSteps128, true, 40)},
+		{name: "function", req: SetLocoFunction(3, 0, LocoFunctionOn)},
+		{name: "function group", req: SetLocoFunctionGroup(3, LocoFunctionGroupF0F4, 0x10)},
+		{name: "binary state", req: SetLocoBinaryState(3, 200, true)},
+		{name: "loco e-stop", req: SetLocoEStop(3)},
+		{name: "purge", req: PurgeLoco(3)},
+		{name: "set stop", req: SetStop(), want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RequestExpectsReply(tt.req); got != tt.want {
+				t.Fatalf("RequestExpectsReply(% x) = %v, want %v", tt.req.Data, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestReplyMatchesRequestXStatus(t *testing.T) {
 	req := GetXStatus()
 	reply := Message{

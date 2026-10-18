@@ -5,8 +5,30 @@ func RequestExpectsReply(req Message) bool {
 	switch req.Header {
 	case HeaderLANSetBroadcastFlags, HeaderLANLogoff:
 		return false
+	case HeaderLANX:
+		return !isLocoCommand(req.Data)
 	default:
 		return true
+	}
+}
+
+// isLocoCommand reports whether data is a LAN_X request that changes a loco:
+// drive, function, function group, binary state, e-stop or purge. The command
+// station does not answer these; it sends LAN_X_LOCO_INFO to the clients
+// subscribed to the loco (spec §4.2–4.6).
+func isLocoCommand(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	switch data[0] {
+	case xHeaderSetLocoDrive, xHeaderSetLocoEStop:
+		return true
+	case xHeaderSetLocoBinary:
+		return len(data) > 1 && data[1] == xCommandSetLocoBinary
+	case xHeaderGetLocoInfo:
+		return len(data) > 1 && data[1] == xCommandPurgeLoco
+	default:
+		return false
 	}
 }
 
