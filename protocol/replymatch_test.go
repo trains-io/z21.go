@@ -71,6 +71,26 @@ func TestRequestExpectsReplyLoco(t *testing.T) {
 	}
 }
 
+func TestRequestExpectsReplySwitching(t *testing.T) {
+	tests := []struct {
+		name string
+		req  Message
+		want bool
+	}{
+		{name: "get turnout info", req: GetTurnoutInfo(7), want: true},
+		{name: "set turnout", req: SetTurnout(7, TurnoutSwitch{Activate: true, Output2: true})},
+		{name: "get ext accessory info", req: GetExtAccessoryInfo(7), want: true},
+		{name: "set ext accessory", req: SetExtAccessory(7, 0x12)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RequestExpectsReply(tt.req); got != tt.want {
+				t.Fatalf("RequestExpectsReply(% x) = %v, want %v", tt.req.Data, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestReplyMatchesRequestXStatus(t *testing.T) {
 	req := GetXStatus()
 	reply := Message{
@@ -113,6 +133,10 @@ func TestReplyMatchesRequestByAddress(t *testing.T) {
 		{name: "turnout info same address", req: GetTurnoutInfo(7), reply: EncodeTurnoutInfo(TurnoutInfo{Address: 7}), want: true},
 		{name: "turnout info other address", req: GetTurnoutInfo(7), reply: EncodeTurnoutInfo(TurnoutInfo{Address: 8})},
 		{name: "loco info does not answer turnout request", req: GetTurnoutInfo(3), reply: EncodeLocoInfo(LocoInfo{Address: 3})},
+		{name: "ext accessory info same address", req: GetExtAccessoryInfo(7), reply: EncodeExtAccessoryInfo(ExtAccessoryInfo{Address: 7, Value: 0x12}), want: true},
+		{name: "ext accessory info other address", req: GetExtAccessoryInfo(7), reply: EncodeExtAccessoryInfo(ExtAccessoryInfo{Address: 8})},
+		{name: "turnout info does not answer ext accessory request", req: GetExtAccessoryInfo(7), reply: EncodeTurnoutInfo(TurnoutInfo{Address: 7})},
+		{name: "ext accessory info does not answer turnout request", req: GetTurnoutInfo(7), reply: EncodeExtAccessoryInfo(ExtAccessoryInfo{Address: 7})},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

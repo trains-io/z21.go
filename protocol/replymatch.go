@@ -6,10 +6,18 @@ func RequestExpectsReply(req Message) bool {
 	case HeaderLANSetBroadcastFlags, HeaderLANLogoff:
 		return false
 	case HeaderLANX:
-		return !isLocoCommand(req.Data)
+		return !isLocoCommand(req.Data) && !isSwitchCommand(req.Data)
 	default:
 		return true
 	}
+}
+
+// isSwitchCommand reports whether data is LAN_X_SET_TURNOUT or
+// LAN_X_SET_EXT_ACCESSORY. The command station does not answer these; it sends
+// LAN_X_TURNOUT_INFO or LAN_X_EXT_ACCESSORY_INFO to the subscribed clients
+// (spec §5.2, §5.4).
+func isSwitchCommand(data []byte) bool {
+	return len(data) > 0 && (data[0] == xHeaderSetTurnout || data[0] == xHeaderSetExtAccessory)
 }
 
 // isLocoCommand reports whether data is a LAN_X request that changes a loco:
@@ -134,6 +142,13 @@ func lanXReplyMatchesRequest(reqData, replyData []byte) bool {
 			return false
 		}
 		info, err := ParseTurnoutInfo(replyData)
+		return err == nil && info.Address == addr
+	case xHeaderGetExtAccessory:
+		addr, err := ParseGetExtAccessoryInfo(reqData)
+		if err != nil {
+			return false
+		}
+		info, err := ParseExtAccessoryInfo(replyData)
 		return err == nil && info.Address == addr
 	default:
 		return false

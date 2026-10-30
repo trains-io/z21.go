@@ -40,6 +40,39 @@ func TestCallLocoCommandWithoutReply(t *testing.T) {
 	}
 }
 
+func TestCallSwitchCommandsWithoutReply(t *testing.T) {
+	c := dialStation(t, startStation(t, nil), client.WithCallTimeout(time.Second))
+
+	for _, req := range []protocol.Message{
+		protocol.SetTurnout(7, protocol.TurnoutSwitch{Activate: true, Output2: true}),
+		protocol.SetExtAccessory(7, 0x12),
+	} {
+		msgs, err := c.Call(t.Context(), req)
+		if err != nil || msgs != nil {
+			t.Fatalf("Call(% x) = %v, %v; want no replies and no error without waiting", req.Data, msgs, err)
+		}
+	}
+}
+
+func TestCallExtAccessoryInfo(t *testing.T) {
+	want := protocol.ExtAccessoryInfo{Address: 7, Value: 0x12, Status: protocol.ExtAccessoryStatusValid}
+	mux := stationMux()
+	mux.HandleLANX(0x44, reply(protocol.EncodeExtAccessoryInfo(want)))
+	c := dialStation(t, startStation(t, mux), client.WithCallTimeout(time.Second))
+
+	msgs, err := c.Call(t.Context(), protocol.GetExtAccessoryInfo(7))
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	got, err := protocol.ExtAccessoryInfoFromMessages(msgs)
+	if err != nil {
+		t.Fatalf("ExtAccessoryInfoFromMessages() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("ExtAccessoryInfo = %+v, want %+v", got, want)
+	}
+}
+
 func TestCallCombinedDeviceInfo(t *testing.T) {
 	c := dialStation(t, startStation(t, nil))
 
